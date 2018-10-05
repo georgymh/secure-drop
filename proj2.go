@@ -75,9 +75,9 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 // The structure definition for a user record
 type User struct {
 	Username string
-	// You can add other fields here if you want...
-	// Note for JSON to marshal/unmarshal, the fields need to
-	// be public (start with a capital letter)
+	Password string
+	Priv PrivateKey
+	Signature_Id string
 }
 
 // This creates a user.  It will only be called once for a user
@@ -97,6 +97,23 @@ type User struct {
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
+	// 1. Generate RSA key-pair
+
+	// 1.5. Store RSA public key into KeyStore
+
+	// 2. Generate Kgen using Argon2 (salt=password)
+
+	// 3. Fill in struct (signature_id should be a random string)
+
+	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
+
+	// 5. Concat E(struct)||IV
+
+	// 6. Put signature_id -> HMAC(K_gen, E(struct)||IV) into DataStore
+
+	// 8. Put SHA256(Kgen) -> E(struct)||IV into DataStore
+
+	// 9. Return pointer to the struct
 	return &userdata, err
 }
 
