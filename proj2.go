@@ -109,9 +109,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	// 5. Concat E(struct)||IV
 
-	// 6. Put signature_id -> HMAC(K_gen, E(struct)||IV) into DataStore
+	// 6. Put "signatures_"||signature_id -> HMAC(K_gen, E(struct)||IV) into DataStore
 
-	// 8. Put SHA256(Kgen) -> E(struct)||IV into DataStore
+	// 8. Put "users_"||SHA256(Kgen) -> E(struct)||IV into DataStore
 
 	// 9. Return pointer to the struct
 	return &userdata, err
@@ -121,6 +121,33 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
+	// 1. Reconstruct Kgen using Argon2
+	Kgen := userlib.Argon2Key(password, username, 128)
+
+	// 2. Look up "users_"||SHA256(Kgen) in the DataStore and get the E(struct)||IV
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(Kgen))
+	user_lookup_id := "users_" + sha256.Sum(nil)
+	encrypted_struct, ok := DatastoreGet(user_lookup_id)
+
+	// 3. If the id is not found in the DataStore, fail with an error
+	if !ok {
+		return nil, errors.New("Incorrect username or password.")
+	}
+
+	// 4. Break up E(struct)||IV and decrypt the structure using Kgen
+
+
+	// 5. Look up "signatures_"||struct->signature_id from the DataStore and
+	// get the Signature_HMAC
+
+	// 6. Verify that HMAC(K_gen, E(struct)||IV) == Signature_HMAC and if not,
+	// fail with an error
+
+	// 7. Check that username == struct->username and password == struct->password,
+	// and if not, fail with an error
+
+	// 8. Return a pointer to the user struct
 	return
 }
 
