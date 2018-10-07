@@ -97,9 +97,18 @@ type User struct {
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
+
+
+
 	// 1. Generate RSA key-pair
+	Kpriv = userlib.GenerateRSAKey()
+	Kpubl = &Kpriv.PublicKey
+
+	
+	user_init := User{Username: username, Password: password, Priv: Kpriv , Signature_Id:id  }
 
 	// 1.5. Store RSA public key into KeyStore
+
 
 	// 2. Generate Kgen using Argon2 (salt=password)
 
