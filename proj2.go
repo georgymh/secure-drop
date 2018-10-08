@@ -76,8 +76,11 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 type User struct {
 	Username string
 	Password string
-	Priv PrivateKey
-	Signature_Id string
+	//should we derreferance it?
+	Priv *userlib.PrivateKey
+
+	//Modified to type[]byte
+	Signature_Id []byte
 }
 
 // This creates a user.  It will only be called once for a user
@@ -98,30 +101,46 @@ type User struct {
 func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 
-
-
 	// 1. Generate RSA key-pair
-	Kpriv = userlib.GenerateRSAKey()
-	Kpubl = &Kpriv.PublicKey
+	Kpriv, _ := userlib.GenerateRSAKey()
+	Kpubl := &Kpriv.PublicKey
 
-	
-	user_init := User{Username: username, Password: password, Priv: Kpriv , Signature_Id:id  }
-
-	// 1.5. Store RSA public key into KeyStore
-
-
-	// 2. Generate Kgen using Argon2 (salt=password)
+	//2. Generate Kgen, IV, and signature_id using Argon2 (salt=password). 
+	//Key length(36) : 16 bytes (key), 16 bytes (IV), 4 bytes (signature -- ID)
+	Fields_Generate := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	Kgen := Fields_Generate[:16]
+	IV := Fields_Generate[16:32]
+	signature := Fields_Generate[32:]	
 
 	// 3. Fill in struct (signature_id should be a random string)
+	user_init := User{Username: username, Password: password, Priv: Kpriv, Signature_Id:signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
+    // Marshall User before encrypt 
+	mar, _ := json.Marshal(user_init)
 
-	// 5. Concat E(struct)||IV
+	Encrypted_User := cfb_encrypt(Kgen, mar, IV) 
+
+	// 5. Concat IV||E(struct)
+	encrypted_PlusIV := append(IV, Encrypted_User...)
 
 	// 6. Put "signatures_"||signature_id -> HMAC(K_gen, E(struct)||IV) into DataStore
+	user_data_store := "signatures_" + string(signature[:])
+	mac := userlib.NewHMAC(Kgen)
+	mac.Write(encrypted_PlusIV)
+	expectedMAC := mac.Sum(nil)
+	userlib.datastore[user_data_store] = expectedMAC
 
-	// 8. Put "users_"||SHA256(Kgen) -> E(struct)||IV into DataStore
 
+	// 7. Put "users_"||SHA256(Kgen) -> E(struct)||IV into DataStore
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(Kgen))
+	user_lookup_id := "users_" + string(sha256.Sum(nil))
+	userlib.datastore[user_lookup_id] = encrypted_PlusIV
+	
+	// 8. Store RSA public key into KeyStore
+	keystore[username] = Kpubl
+	
 	// 9. Return pointer to the struct
 	return &userdata, err
 }
@@ -131,7 +150,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	// 1. Reconstruct Kgen using Argon2
-	Kgen := userlib.Argon2Key(password, username, 128)
+	Kgen := userlib.Argon2Key([]byte(username), []byte(password), 36)
 
 	// 2. Look up "users_"||SHA256(Kgen) in the DataStore and get the E(struct)||IV
 	sha256 := userlib.NewSHA256()
@@ -216,4 +235,14 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
 	return
+}
+
+
+// helper functions 
+
+func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
+	stream := userlib.CFBEncrypter(key, iv)
+	cipherText = make([]byte, len(plainText))
+	stream.XORKeyStream(cipherText, plainText)
+	return 
 }
