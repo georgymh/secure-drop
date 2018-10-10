@@ -179,6 +179,13 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	return
 }
 
+type File struct {
+	Filename string
+	Data string
+	Count int
+	Signature_Id []byte
+}
+
 // This stores a file in the datastore.
 //
 // The name of the file should NOT be revealed to the datastore!
@@ -211,7 +218,7 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	// 1. Reconstruct KgenF, IV, and signature_id using Argon2
+	// 1. Reconstruct KgenF and IV using Argon2
 
 	// 2. Get and decrypt the File struct from DataStore
 
@@ -233,7 +240,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	// 1. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = 0)
+	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
 
 	// 2. Get and decrypt the File struct from DataStore
 
