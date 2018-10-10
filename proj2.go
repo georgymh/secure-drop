@@ -183,6 +183,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 //
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	// Call _StoreFileHelper() with index = 0
+}
+
+func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) {
 	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
 	//    (pass=username || 0, salt=filename)
 
@@ -207,6 +211,21 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	// 1. Reconstruct KgenF, IV, and signature_id using Argon2
+
+	// 2. Get and decrypt the File struct from DataStore
+
+	// 3. Return an error if the file struct has been tampered with (check
+	// signature and HMAC)
+
+	// 4. For i = 1 to struct_0->count, return an error if file struct_i has been
+	// tampered
+
+	// 5. Add 1 to the count on the struct
+
+	// 6. Update the File structure and signature in DataStore
+
+	// 7. Call _StoreFileHelper on the new appended data with index = count + 1
 	return
 }
 
@@ -214,6 +233,31 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	// 1. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = 0)
+
+	// 2. Get and decrypt the File struct from DataStore
+
+	// 3. Return nil if record not found
+
+	// 4. Return an error if the file struct_0 has been tampered with (check
+	// signature and HMAC)
+
+	// 5. Retrieve the count from the structure
+
+	// 6. Initialize all_data variable with struct_0->data
+
+	// 7. For i between 1 and count (inclusive)
+
+	// 7.a. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = i)
+
+	// 7.b. Get and decrypt the File struct from DataStore
+
+	// 7.c. Return an error if the file struct_i has been tampered with (check
+	// signature and HMAC)
+
+	// 7.d. Append struct_i->data to all_data
+
+	// 8. Return all_data
 	return
 }
 
