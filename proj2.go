@@ -105,21 +105,21 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	Kpriv, _ := userlib.GenerateRSAKey()
 	Kpubl := &Kpriv.PublicKey
 
-	//2. Generate Kgen, IV, and signature_id using Argon2 (salt=password). 
+	//2. Generate Kgen, IV, and signature_id using Argon2 (salt=password).
 	//Key length(36) : 16 bytes (key), 16 bytes (IV), 4 bytes (signature -- ID)
 	Fields_Generate := userlib.Argon2Key([]byte(password), []byte(username), 36)
 	Kgen := Fields_Generate[:16]
 	IV := Fields_Generate[16:32]
-	signature := Fields_Generate[32:]	
+	signature := Fields_Generate[32:]
 
 	// 3. Fill in struct (signature_id should be a random string)
 	user_init := User{Username: username, Password: password, Priv: Kpriv, Signature_Id:signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
-    // Marshall User before encrypt 
+    // Marshall User before encrypt
 	mar, _ := json.Marshal(user_init)
 
-	Encrypted_User := cfb_encrypt(Kgen, mar, IV) 
+	Encrypted_User := cfb_encrypt(Kgen, mar, IV)
 
 	// 5. Concat IV||E(struct)
 	encrypted_PlusIV := append(IV, Encrypted_User...)
@@ -137,10 +137,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	sha256.Write([]byte(Kgen))
 	user_lookup_id := "users_" + string(sha256.Sum(nil))
 	userlib.datastore[user_lookup_id] = encrypted_PlusIV
-	
+
 	// 8. Store RSA public key into KeyStore
 	keystore[username] = Kpubl
-	
+
 	// 9. Return pointer to the struct
 	return &userdata, err
 }
@@ -183,6 +183,25 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 //
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	// Call _StoreFileHelper() with index = 0
+}
+
+func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) {
+	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
+	//    (pass=username || 0, salt=filename)
+
+	// 2. Fill in a File struct with the filename, data, count integer, and
+	//	  signature_id
+
+	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
+
+	// 4. Concat IV||E(struct)
+
+	// 5. Put "signatures_"||signature_id -> HMAC(K_genF, IV||E(struct)) into
+	//    DataStore
+
+	// 6. Put "files_"||SHA256(KgenF) -> IV||E(struct) into DataStore
+
 }
 
 // This adds on to an existing file.
@@ -192,6 +211,21 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	// 1. Reconstruct KgenF, IV, and signature_id using Argon2
+
+	// 2. Get and decrypt the File struct from DataStore
+
+	// 3. Return an error if the file struct has been tampered with (check
+	// signature and HMAC)
+
+	// 4. For i = 1 to struct_0->count, return an error if file struct_i has been
+	// tampered
+
+	// 5. Add 1 to the count on the struct
+
+	// 6. Update the File structure and signature in DataStore
+
+	// 7. Call _StoreFileHelper on the new appended data with index = count + 1
 	return
 }
 
@@ -199,6 +233,31 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	// 1. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = 0)
+
+	// 2. Get and decrypt the File struct from DataStore
+
+	// 3. Return nil if record not found
+
+	// 4. Return an error if the file struct_0 has been tampered with (check
+	// signature and HMAC)
+
+	// 5. Retrieve the count from the structure
+
+	// 6. Initialize all_data variable with struct_0->data
+
+	// 7. For i between 1 and count (inclusive)
+
+	// 7.a. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = i)
+
+	// 7.b. Get and decrypt the File struct from DataStore
+
+	// 7.c. Return an error if the file struct_i has been tampered with (check
+	// signature and HMAC)
+
+	// 7.d. Append struct_i->data to all_data
+
+	// 8. Return all_data
 	return
 }
 
@@ -238,13 +297,16 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 }
 
 
+
+
+
 //-------- helper functions --------//
 
 func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
 	stream := userlib.CFBEncrypter(key, iv)
 	cipherText = make([]byte, len(plainText))
 	stream.XORKeyStream(cipherText, plainText)
-	return 
+	return
 }
 
 func cfb_decrypt(key []byte,  ciphertext []byte, iv []byte) (plaintext []byte){
