@@ -141,8 +141,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userlib.KeystoreSet(username, *Kpubl)
 
 	// 9. Return pointer to the struct
-	
-
 	return &userdata, err
 }
 
