@@ -206,10 +206,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 type File struct {
-	Filename     string
-	Data         string
-	Count        int
-	Signature_Id []byte
+	Data              string
+	Count             int
+	Shared_With_Users []string
+	Signature_Id      []byte
 }
 
 // This stores a file in the datastore.
@@ -223,8 +223,8 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
 	//    (pass=username || 0, salt=filename)
 
-	// 2. Fill in a File struct with the filename, data, count integer, and
-	//	  signature_id
+	// 2. Fill in a File struct with the filename, data, count integer,
+	//	  shared with users and signature_id
 
 	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
 
@@ -326,8 +326,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
-	// 1.75. Error if data has been tampered with [NOTE: not sure if we need to check
-	// this -- prompt doesn't say anything about it]
+	// 1.75. Error if data has been tampered with [NOTE: not sure if we need to
+	// check this -- prompt doesn't say anything about it]
 
 	// 2. Make a sharingRecord struct with the sender's username, receiver's
 	// username, KgenF (as File_Key), and IV (make signature_id be empty)
@@ -336,15 +336,19 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 
 	// 3.5. Error if it is not found
 
-	// 4. RSA Encrypt the marshalled version of the sharingRecord struct using
+	// 4. Store a random byte onto the DataStore with id:
+	// "pending_shares_"||SHA256(Argon2(pass=KgenF, salt=recipient's username))
+	// (This will be used to verify that the file wasn't already received)
+
+	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
 	// the recipient's RSA Public Key
 
-	// 5. Sign (HMAC) the encrypted message (from step 4) using the current user's
+	// 6. Sign (HMAC) the encrypted message (from step 4) using the current user's
 	// RSA private key [NOTE: I changed this -- before we had the HMAC of the
 	// encrypted message using the RSA Public Key of the receiver, but I think
 	// this is more secure]
 
-	// 6. Return the concatenation of the encrypted message || signature ||
+	// 7. Return the concatenation of the encrypted message || signature ||
 	// current user's username
 
 	return
@@ -356,26 +360,47 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
 	// 1. (msgid is the RSA-E_K_rec,pub(sharingRecord struct)||HMAC())
-	// Decrypt the sharingRecord struct using the current user's RSA Private Key
+	// Decrypt the sharingRecord struct using the receiver's RSA Private Key
 
-	// 2. Get the current user's RSA Public Key from KeyStore
+	// 2. Get the receiver's RSA Public Key from KeyStore
 
 	// 3. Verify the HMAC of the encrypted sharingRecord using the receiver's RSA
 	// Public Key [if not valid, error]
 
-	// 4. Generate KgenF, IV and signature_id using Argon2 with parameters
-	//    (pass=username || 0, salt=filename)
+	// 4. Generate the one_time_verification_id and completed_IV with
+	// Argon2(pass=struct->KgenF, salt=receiver's username)
+
+	// 5. If "pending_shares_"||SHA256(one_time_verification_id) doesn't exist in
+	// the DataStore, send error (this implies that the data was already shared
+	// with this user)
+
+	// 6. Delete "pending_shares_"||SHA256(one_time_verification_id) from the
+	// DataStore to prevent message reuses
+
+	// 4. Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// (pass=receiver's username || 0, salt=filename)
 
 	// 5. Set struct->signature_id to be signature_id
 
-	// 6. Marshall and encrypt struct with CFB (key=KgenF, IV=IV)
+	// 6. Marshall and encrypt struct with CFB (key=NewKgenF, IV=IV) [E(struct)]
 
 	// 7. Concat IV||E(struct)
 
-	// 8. Put "signatures_"||signature_id -> HMAC(K_genF, IV||E(struct)) into
-	//    DataStore
+	// 8. Put "signatures_"||signature_id -> HMAC(NewKgenF, IV||E(struct)) into
+	// DataStore
 
-	// 9. Put "shared_files_"||SHA256(KgenF) -> IV||E(struct) into DataStore
+	// 9. Put "shared_files_"||SHA256(NewKgenF) -> IV||E(struct) into DataStore
+
+	// 10. Get the original File struct from DataStore (Get
+	// "files_"||SHA256(struct->File_Key) and decrypt it with struct->File_Key)
+	// [NOTE: this may be insecure because receiver could store the
+	// struct->File_Key somewhere! -- let's ask Piazza]
+
+	// 11. Append the SHA256(NewKGenF) to original File struct's property
+	// Shared_With_Users (this will be used for revoking)
+
+	// 12. Update the Original File Struct on the DataStore (marshall and encrypt
+	// and store as struct->Iv||E(struct))
 
 	return nil
 }
@@ -387,7 +412,8 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 
 	// 2. Get the File struct from DataStore under the "shared_files_" namespace
 
-	// 3. If found, return error because this user is not the original owner of the file
+	// 3. If found, return error because this user is not the original owner of
+	// the file
 
 	// 4. Get the File struct from DataStore under the "files_" namespace
 
@@ -395,7 +421,15 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 
 	// 6. Decrypt the File struct
 
-	// NOTE: INCOMPLETE
+	// 7. For each of the SHA256(NewKGenF) in struct->Shared_With_Users
+
+	// 7.a. Delete "shared_files_"||SHA256(NewKgenF)" from the DataStore
+
+	// 8. Make struct->Shared_With_Users be the empty array
+
+	// 9. Update the File Struct on the DataStore (marshall and encrypt and store
+	// as IV||E(struct))
+
 	return
 }
 
