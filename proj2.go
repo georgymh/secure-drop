@@ -107,7 +107,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	//2. Generate Kgen, IV, and signature_id using Argon2 (salt=password).
 	//Key length(36) : 16 bytes (key), 16 bytes (IV), 4 bytes (signature -- ID)
-	Fields_Generate := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	Fields_Generate := userlib.Argon2Key([]byte(password), []byte(username), 36)
 	Kgen := Fields_Generate[:16]
 	IV := Fields_Generate[16:32]
 	signature := Fields_Generate[32:]
@@ -362,7 +362,10 @@ func (userdata *User) RevokeFile(filename string) (err error) {
 }
 
 
-// helper functions
+
+
+
+//-------- helper functions --------//
 
 func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
 	stream := userlib.CFBEncrypter(key, iv)
@@ -370,3 +373,12 @@ func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
 	stream.XORKeyStream(cipherText, plainText)
 	return
 }
+
+func cfb_decrypt(key []byte,  ciphertext []byte, iv []byte) (plaintext []byte){
+	stream := userlib.CFBDecrypter(key, iv)
+	plaintext = make([]byte, len(ciphertext))
+	stream.XORKeyStream(plaintext, ciphertext)
+	return 
+	
+}
+
