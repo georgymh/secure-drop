@@ -113,13 +113,13 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	signature := Fields_Generate[32:]
 
 	// 3. Fill in struct (signature_id should be a random string)
-	user_init := User{Username: username, Password: password, Priv: Kpriv, Signature_Id:signature}
+	userdata := User{Username: username, Password: password, Priv: Kpriv, Signature_Id:signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
     // Marshall User before encrypt
-	mar, _ := json.Marshal(user_init)
+	user_, _ := json.Marshal(userdata)
 
-	Encrypted_User := cfb_encrypt(Kgen, mar, IV)
+	Encrypted_User := cfb_encrypt(Kgen, user_, IV)
 
 	// 5. Concat IV||E(struct)
 	IV_EncryptedStruct := append(IV, Encrypted_User...)
@@ -189,14 +189,21 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("Found corrupted data")
 	}
 
-
-
-
 	// 7. Check that username == struct->username and password == struct->password,
 	// and if not, fail with an error
+	if userStruct.Username != Username {
+		return nil, errors.New("Wrong username")
+	}
 
 	// 8. Return a pointer to the user struct
-	return
+	return &userStruct, err
+}
+
+type File struct {
+	Filename string
+	Data string
+	Count int
+	Signature_Id []byte
 }
 
 // This stores a file in the datastore.
@@ -231,9 +238,11 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	// 1. Reconstruct KgenF, IV, and signature_id using Argon2
+	// 1. Reconstruct KgenF and IV using Argon2
 
 	// 2. Get and decrypt the File struct from DataStore
+	// (NOTE: first look for it in the namespace "shared_files_". Do the
+	//	conversion if found, otherwise look at the "files_" namespace)
 
 	// 3. Return an error if the file struct has been tampered with (check
 	// signature and HMAC)
@@ -253,9 +262,11 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	// 1. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = 0)
+	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
 
 	// 2. Get and decrypt the File struct from DataStore
+	// (NOTE: first look for it in the namespace "shared_files_". Do the
+	//	conversion if found, otherwise look at the "files_" namespace)
 
 	// 3. Return nil if record not found
 
@@ -285,7 +296,11 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // // You may want to define what you actually want to pass as a
 // // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
- 
+	Sender string
+	Reveiver string
+	File_Key []byte
+	Iv []byte
+	Signature_Id []byte
 }
 
 // This creates a sharing record, which is a key pointing to something
@@ -301,6 +316,33 @@ type sharingRecord struct {
 
 func (userdata *User) ShareFile(filename string, recipient string) (
 	msgid string, err error) {
+	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
+
+	// 1.5. Get the file and error if File struct is not found on the DataStore
+	// (NOTE: first look for it in the namespace "shared_files_". Do the
+	//	conversion if found, otherwise look at the "files_" namespace)
+
+	// 1.75. Error if data has been tampered with [not sure if we need to check
+	// this -- prompt doesn't say anything about it]
+
+	// 2. Make a sharingRecord struct with the sender's username, receiver's
+	// username, KgenF (as FileKey), and IV (make signature_id be empty)
+
+	// 3. Look up the RSA Public Key of the recipient in the KeyStore
+
+	// 3.5. Error if it is not found
+
+	// 4. RSA Encrypt the marshalled version of the sharingRecord struct using
+	// the recipient's RSA Public Key
+
+	// 5. Sign (HMAC) the encrypted message (from step 4) using the current user's
+	// RSA private key [NOTE: I changed this -- before we had the HMAC of the
+	// encrypted message using the RSA Public Key of the receiver, but I think
+	// this is more secure]
+
+	// 6. Return the concatenation of the encrypted message || signature ||
+	// current user's username
+
 	return
 }
 
@@ -310,6 +352,28 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string,
 	msgid string) error {
+	// 1. (msgid is the RSA-E_K_rec,pub(sharingRecord struct)||HMAC())
+	// Decrypt the sharingRecord struct using the current user's RSA Private Key
+
+	// 2. Get the receiver's RSA Public Key from KeyStore
+
+	// 3. Verify the HMAC of the encrypted sharingRecord using the receiver's RSA
+	// Public Key [if not valid, error]
+
+	// 4. Generate KgenF, IV and signature_id using Argon2 with parameters
+	//    (pass=username || 0, salt=filename)
+
+	// 5. Set struct->signature_id to be signature_id
+
+	// 6. Marshall and encrypt struct with CFB (key=KgenF, IV=IV)
+
+	// 7. Concat IV||E(struct)
+
+	// 8. Put "signatures_"||signature_id -> HMAC(K_genF, IV||E(struct)) into
+	//    DataStore
+
+	// 9. Put "shared_files_"||SHA256(KgenF) -> IV||E(struct) into DataStore
+
 	return nil
 }
 
