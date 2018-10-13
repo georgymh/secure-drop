@@ -79,5 +79,4 @@ func TestShare(t *testing.T) {
 	if !reflect.DeepEqual(v, v2) {
 		t.Error("Shared file is not the same", v, v2)
 	}
-
 }

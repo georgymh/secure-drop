@@ -113,10 +113,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	signature := Fields_Generate[32:]
 
 	// 3. Fill in struct (signature_id should be a random string)
-	userdata := User{Username: username, Password: password, Priv: Kpriv, Signature_Id:signature}
+	userdata := User{Username: username, Password: password, Priv: Kpriv, Signature_Id: signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
-    // Marshall User before encrypt
+	// Marshall User before encrypt
 	user_, _ := json.Marshal(userdata)
 
 	Encrypted_User := cfb_encrypt(Kgen, user_, IV)
@@ -130,7 +130,6 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
 	userlib.datastore[user_data_store] = expectedMAC
-
 
 	// 7. Put "users_"||SHA256(Kgen) -> IV||E(struct) into DataStore
 	sha256 := userlib.NewSHA256()
@@ -168,16 +167,16 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	IV := encrypted_struct[:16]
 	E_struct := encrypted_struct[16:32]
 
-	//Decrypt then unmarshall data then get ID field 
+	//Decrypt then unmarshall data then get ID field
 	struct_marshall := cfb_decrypt(kgen, E_struct, IV)
-	var userStruct User 
+	var userStruct User
 	json.Unmarshal(struct_marshall, &userStruct)
 
 	// 5. Look up "signatures_"||struct->signature_id from the DataStore and
 	// get the Signature_HMAC
 	id := userStruct.Signature_Id
 	id_to_lookup := "signatures_" + string(id)
-	signature_hmac := datastore[id_to_lookup] 
+	signature_hmac := datastore[id_to_lookup]
 
 	// 6. Verify that HMAC(K_gen, IV||E(struct)) == Signature_HMAC and if not,
 	// fail with an error
@@ -200,9 +199,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 type File struct {
-	Filename string
-	Data string
-	Count int
+	Filename     string
+	Data         string
+	Count        int
 	Signature_Id []byte
 }
 
@@ -289,17 +288,16 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// 7.d. Append struct_i->data to all_data
 
 	// 8. Return all_data
-	userdata.pas
 	return
 }
 
-// // You may want to define what you actually want to pass as a
-// // sharingRecord to serialized/deserialize in the data store.
+// You may want to define what you actually want to pass as a
+// sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
-	Sender string
-	Reveiver string
-	File_Key []byte
-	Iv []byte
+	Sender       string
+	Reveiver     string
+	File_Key     []byte
+	Iv           []byte
 	Signature_Id []byte
 }
 
@@ -314,19 +312,18 @@ type sharingRecord struct {
 // recipient can access the sharing record, and only the recipient
 // should be able to know the sender.
 
-func (userdata *User) ShareFile(filename string, recipient string) (
-	msgid string, err error) {
+func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
 	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
 
 	// 1.5. Get the file and error if File struct is not found on the DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
-	// 1.75. Error if data has been tampered with [not sure if we need to check
+	// 1.75. Error if data has been tampered with [NOTE: not sure if we need to check
 	// this -- prompt doesn't say anything about it]
 
 	// 2. Make a sharingRecord struct with the sender's username, receiver's
-	// username, KgenF (as FileKey), and IV (make signature_id be empty)
+	// username, KgenF (as File_Key), and IV (make signature_id be empty)
 
 	// 3. Look up the RSA Public Key of the recipient in the KeyStore
 
@@ -350,12 +347,11 @@ func (userdata *User) ShareFile(filename string, recipient string) (
 // The recipient should not be able to discover the sender's view on
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
-func (userdata *User) ReceiveFile(filename string, sender string,
-	msgid string) error {
+func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
 	// 1. (msgid is the RSA-E_K_rec,pub(sharingRecord struct)||HMAC())
 	// Decrypt the sharingRecord struct using the current user's RSA Private Key
 
-	// 2. Get the receiver's RSA Public Key from KeyStore
+	// 2. Get the current user's RSA Public Key from KeyStore
 
 	// 3. Verify the HMAC of the encrypted sharingRecord using the receiver's RSA
 	// Public Key [if not valid, error]
@@ -379,24 +375,36 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 
 // Removes access for all others.
 func (userdata *User) RevokeFile(filename string) (err error) {
+	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
+	//    (pass=username || 0, salt=filename)
+
+	// 2. Get the File struct from DataStore under the "shared_files_" namespace
+
+	// 3. If found, return error because this user is not the original owner of the file
+
+	// 4. Get the File struct from DataStore under the "files_" namespace
+
+	// 5. If not found, return error because the file doesn't exist
+
+	// 6. Decrypt the File struct
+
+	// NOTE: INCOMPLETE
 	return
 }
 
-
 //-------- helper functions --------//
 
-func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
+func cfb_encrypt(key []byte, plainText []byte, iv []byte) (cipherText []byte) {
 	stream := userlib.CFBEncrypter(key, iv)
 	cipherText = make([]byte, len(plainText))
 	stream.XORKeyStream(cipherText, plainText)
 	return
 }
 
-func cfb_decrypt(key []byte,  ciphertext []byte, iv []byte) (plaintext []byte){
+func cfb_decrypt(key []byte, ciphertext []byte, iv []byte) (plaintext []byte) {
 	stream := userlib.CFBDecrypter(key, iv)
 	plaintext = make([]byte, len(ciphertext))
 	stream.XORKeyStream(plaintext, ciphertext)
-	return 
-	
-}
+	return
 
+}

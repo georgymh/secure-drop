@@ -1,0 +1,20 @@
+# Secure Drop
+
+To run tests, run in terminal:
+
+```
+export GOPATH=$(pwd)
+```
+
+```
+go get github.com/google/uuid
+go get github.com/nweaver/cs161-p2/userlib
+```
+
+```
+cd src/proj2
+```
+
+```
+go run test
+```
