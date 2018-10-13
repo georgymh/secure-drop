@@ -1,6 +1,6 @@
 # Secure Drop
 
-To run tests, run in terminal:
+To set up the environment for the first time, run in terminal:
 
 ```
 export GOPATH=$(pwd)
@@ -16,5 +16,7 @@ cd src/proj2
 ```
 
 ```
-go run test
+go test
 ```
+
+For any other time, run the same commands minus the "go gets".
