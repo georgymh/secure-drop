@@ -294,8 +294,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
-	Sender       string
-	Reveiver     string
+	Receiver     string
 	File_Key     []byte
 	Iv           []byte
 	Signature_Id []byte
@@ -336,13 +335,12 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
 	// the recipient's RSA Public Key
 
-	// 6. Sign (HMAC) the encrypted message (from step 4) using the current user's
+	// 6. Sign (HMAC) the encrypted message (from step 4) using the sender's
 	// RSA private key [NOTE: I changed this -- before we had the HMAC of the
 	// encrypted message using the RSA Public Key of the receiver, but I think
 	// this is more secure]
 
-	// 7. Return the concatenation of the encrypted message || signature ||
-	// current user's username
+	// 7. Return the concatenation of the encrypted message || signature
 
 	return
 }
@@ -354,6 +352,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
 	// 1. (msgid is the RSA-E_K_rec,pub(sharingRecord struct)||HMAC())
 	// Decrypt the sharingRecord struct using the receiver's RSA Private Key
+
+	// 1.5. Check that the struct->receiver matches the receiver's username
 
 	// 2. Get the receiver's RSA Public Key from KeyStore
 
