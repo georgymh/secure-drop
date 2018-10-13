@@ -284,35 +284,9 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
 // // You may want to define what you actually want to pass as a
 // // sharingRecord to serialized/deserialize in the data store.
-// type sharingRecord struct {
-//     //Argon(Filename||password) : E(File Struct)||H(E(file_struct))
-
-// 	//Key for decrypting file struct 
-// 	Ksym []byte 
-	
-// 	//key for getting file struct from datastore. Key generated from argon  
-// 	File_struct_key_ID []byte 
-
-// 	//Key for the getting the HMAC in H(E(file_struct)): 
-// 	File_struct_HMAC_key []byte  
-// }
-
-
-// /// Struct containing keys for decrypting data and accessing the file 
-// type userFile struct {
-// 	// Maybe we need a private key to know original user when
-// 	// Sharing a file and want to revoke a user later 
-
-// 	// Key to encrypt every block of data 
-// 	data_encrypt_key []byte
-
-// 	//Key used for HMACing each data block  
-// 	dataBlock_HMACkey []byte 
-
-// 	// list of identifiers for blocks of data 
-// 	dataBlock_ID map[int][]byte
-
-// }
+type sharingRecord struct {
+ 
+}
 
 // This creates a sharing record, which is a key pointing to something
 // in the datastore to share with the recipient.
