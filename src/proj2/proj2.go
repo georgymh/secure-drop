@@ -99,6 +99,9 @@ type User struct {
 
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
+    //NOTE: If time allows, store user struct and HMAC as:
+    // "users_"||SHA256(Kgen) : IV||E(struct)||HMAC(E(struct))
+
 	//var userdata User
 
 	// 1. Generate RSA key-pair
@@ -204,10 +207,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 type File struct {
-	Data              string
+	Data              []byte
 	Count             int
 	Shared_With_Users []string
-	Signature_Id      []byte
+	// Signature_Id      []byte
 }
 
 // This stores a file in the datastore.
@@ -215,24 +218,45 @@ type File struct {
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
 	// Call _StoreFileHelper() with index = 0
+	(userdata)._StoreFileHelper(filename, data, 0) 
+
 }
 
 func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) {
-	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
-	//    (pass=username || 0, salt=filename)
+	// 1. Generate KgenF, IV 
+	//    (pass=username || 0, salt=filename) 
+	//u := &User
+	argon_param := userdata.Username + "0"
+	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
+	KgenF := Fields_Generate[:16]
+	iv := Fields_Generate[16:32]
 
 	// 2. Fill in a File struct with the filename, data, count integer,
 	//	  shared with users and signature_id
+	var users_shared []string
+	var fileStruct = File{Data: data, Count:index, Shared_With_Users:users_shared}
 
 	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
+	file_, _ := json.Marshal(fileStruct)
+	Encrypted_file := cfb_encrypt(KgenF, file_, iv)
 
 	// 4. Concat IV||E(struct)
+	IV_EncryptedStruct := append(iv, Encrypted_file...)
 
-	// 5. Put "signatures_"||signature_id -> HMAC(K_genF, IV||E(struct)) into
-	//    DataStore
 
-	// 6. Put "files_"||SHA256(KgenF) -> IV||E(struct) into DataStore
+	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
 
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(KgenF))
+	file_lookup_id := "files_" + string(sha256.Sum(nil))
+	
+	mac := userlib.NewHMAC(KgenF)
+	mac.Write(IV_EncryptedStruct)
+	expectedMAC := mac.Sum(nil)
+
+	IV_EncFile_HMAC := append(IV_EncryptedStruct, expectedMAC...)
+
+	userlib.DatastoreSet(file_lookup_id, IV_EncFile_HMAC)
 }
 
 // This adds on to an existing file.
