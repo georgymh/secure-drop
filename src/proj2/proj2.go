@@ -99,7 +99,7 @@ type User struct {
 
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
-	var userdata User
+	//var userdata User
 
 	// 1. Generate RSA key-pair
 	Kpriv, _ := userlib.GenerateRSAKey()
@@ -113,7 +113,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	signature := Fields_Generate[32:]
 
 	// 3. Fill in struct (signature_id should be a random string)
-	userdata := User{Username: username, Password: password, Priv: Kpriv, Signature_Id: signature}
+	var userdata = User{Username: username, Password: password, Priv: Kpriv, Signature_Id: signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
 	// Marshall User before encrypt
@@ -129,18 +129,20 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	mac := userlib.NewHMAC(Kgen)
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
-	userlib.datastore[user_data_store] = expectedMAC
+	userlib.DatastoreSet(user_data_store, expectedMAC)
 
 	// 7. Put "users_"||SHA256(Kgen) -> IV||E(struct) into DataStore
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
 	user_lookup_id := "users_" + string(sha256.Sum(nil))
-	userlib.datastore[user_lookup_id] = IV_EncryptedStruct
+	userlib.DatastoreSet(user_lookup_id, IV_EncryptedStruct)
 
 	// 8. Store RSA public key into KeyStore
-	keystore[username] = Kpubl
+	userlib.KeystoreSet(username, *Kpubl)
 
 	// 9. Return pointer to the struct
+	
+
 	return &userdata, err
 }
 
@@ -149,14 +151,14 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	// 1. Reconstruct Kgen using Argon2
-	bytes_generated := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	bytes_generated := userlib.Argon2Key([]byte(password), []byte(username), 36)
 	Kgen := bytes_generated[:16]
 
 	// 2. Look up "users_"||SHA256(Kgen) in the DataStore and get the E(struct)||IV
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
-	user_lookup_id := "users_" + sha256.Sum(nil)
-	IV_EncryptedStruct, ok := DatastoreGet(user_lookup_id)
+	user_lookup_id := "users_" + string(sha256.Sum(nil))
+	IV_EncryptedStruct, ok := userlib.DatastoreGet(user_lookup_id)
 
 	// 3. If the id is not found in the DataStore, fail with an error
 	if !ok {
@@ -164,11 +166,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	}
 
 	// 4. Break up IV||E(struct) and decrypt the structure using Kgen
-	IV := encrypted_struct[:16]
-	E_struct := encrypted_struct[16:32]
+	IV := IV_EncryptedStruct[:16]
+	E_struct := IV_EncryptedStruct[16:]
 
 	//Decrypt then unmarshall data then get ID field
-	struct_marshall := cfb_decrypt(kgen, E_struct, IV)
+	struct_marshall := cfb_decrypt(Kgen, E_struct, IV)
 	var userStruct User
 	json.Unmarshal(struct_marshall, &userStruct)
 
@@ -176,7 +178,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	// get the Signature_HMAC
 	id := userStruct.Signature_Id
 	id_to_lookup := "signatures_" + string(id)
-	signature_hmac := datastore[id_to_lookup]
+	signature_hmac, ok := userlib.DatastoreGet(id_to_lookup)
+
+	if !ok {
+		return nil, errors.New("HMAC was not found")
+	}
 
 	// 6. Verify that HMAC(K_gen, IV||E(struct)) == Signature_HMAC and if not,
 	// fail with an error
@@ -184,13 +190,14 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
 
-	if expectedMAC != signature_hmac {
+    // Not sure if this is right way to compare but cannot compare using bytes.equals since cannnot import anything else
+	if string(expectedMAC) != string(signature_hmac) { 
 		return nil, errors.New("Found corrupted data")
 	}
 
 	// 7. Check that username == struct->username and password == struct->password,
 	// and if not, fail with an error
-	if userStruct.Username != Username {
+	if userStruct.Username != username {
 		return nil, errors.New("Wrong username")
 	}
 
