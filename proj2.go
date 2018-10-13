@@ -122,21 +122,21 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	Encrypted_User := cfb_encrypt(Kgen, mar, IV)
 
 	// 5. Concat IV||E(struct)
-	encrypted_PlusIV := append(IV, Encrypted_User...)
+	IV_EncryptedStruct := append(IV, Encrypted_User...)
 
-	// 6. Put "signatures_"||signature_id -> HMAC(K_gen, E(struct)||IV) into DataStore
+	// 6. Put "signatures_"||signature_id -> HMAC(K_gen, IV||E(struct) into DataStore
 	user_data_store := "signatures_" + string(signature[:])
 	mac := userlib.NewHMAC(Kgen)
-	mac.Write(encrypted_PlusIV)
+	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
 	userlib.datastore[user_data_store] = expectedMAC
 
 
-	// 7. Put "users_"||SHA256(Kgen) -> E(struct)||IV into DataStore
+	// 7. Put "users_"||SHA256(Kgen) -> IV||E(struct) into DataStore
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
 	user_lookup_id := "users_" + string(sha256.Sum(nil))
-	userlib.datastore[user_lookup_id] = encrypted_PlusIV
+	userlib.datastore[user_lookup_id] = IV_EncryptedStruct
 
 	// 8. Store RSA public key into KeyStore
 	keystore[username] = Kpubl
@@ -150,27 +150,47 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	// 1. Reconstruct Kgen using Argon2
-	Kgen := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	bytes_generated := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	Kgen := bytes_generated[:16]
 
 	// 2. Look up "users_"||SHA256(Kgen) in the DataStore and get the E(struct)||IV
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
 	user_lookup_id := "users_" + sha256.Sum(nil)
-	encrypted_struct, ok := DatastoreGet(user_lookup_id)
+	IV_EncryptedStruct, ok := DatastoreGet(user_lookup_id)
 
 	// 3. If the id is not found in the DataStore, fail with an error
 	if !ok {
 		return nil, errors.New("Incorrect username or password.")
 	}
 
-	// 4. Break up E(struct)||IV and decrypt the structure using Kgen
+	// 4. Break up IV||E(struct) and decrypt the structure using Kgen
+	IV := encrypted_struct[:16]
+	E_struct := encrypted_struct[16:32]
 
+	//Decrypt then unmarshall data then get ID field 
+	struct_marshall := cfb_decrypt(kgen, E_struct, IV)
+	var userStruct User 
+	json.Unmarshal(struct_marshall, &userStruct)
 
 	// 5. Look up "signatures_"||struct->signature_id from the DataStore and
 	// get the Signature_HMAC
+	id := userStruct.Signature_Id
+	id_to_lookup := "signatures_" + string(id)
+	signature_hmac := datastore[id_to_lookup] 
 
-	// 6. Verify that HMAC(K_gen, E(struct)||IV) == Signature_HMAC and if not,
+	// 6. Verify that HMAC(K_gen, IV||E(struct)) == Signature_HMAC and if not,
 	// fail with an error
+	mac := userlib.NewHMAC(Kgen)
+	mac.Write(IV_EncryptedStruct)
+	expectedMAC := mac.Sum(nil)
+
+	if expectedMAC != signature_hmac {
+		return nil, errors.New("Found corrupted data")
+	}
+
+
+
 
 	// 7. Check that username == struct->username and password == struct->password,
 	// and if not, fail with an error
@@ -258,13 +278,41 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// 7.d. Append struct_i->data to all_data
 
 	// 8. Return all_data
+	userdata.pas
 	return
 }
 
-// You may want to define what you actually want to pass as a
-// sharingRecord to serialized/deserialize in the data store.
-type sharingRecord struct {
-}
+// // You may want to define what you actually want to pass as a
+// // sharingRecord to serialized/deserialize in the data store.
+// type sharingRecord struct {
+//     //Argon(Filename||password) : E(File Struct)||H(E(file_struct))
+
+// 	//Key for decrypting file struct 
+// 	Ksym []byte 
+	
+// 	//key for getting file struct from datastore. Key generated from argon  
+// 	File_struct_key_ID []byte 
+
+// 	//Key for the getting the HMAC in H(E(file_struct)): 
+// 	File_struct_HMAC_key []byte  
+// }
+
+
+// /// Struct containing keys for decrypting data and accessing the file 
+// type userFile struct {
+// 	// Maybe we need a private key to know original user when
+// 	// Sharing a file and want to revoke a user later 
+
+// 	// Key to encrypt every block of data 
+// 	data_encrypt_key []byte
+
+// 	//Key used for HMACing each data block  
+// 	dataBlock_HMACkey []byte 
+
+// 	// list of identifiers for blocks of data 
+// 	dataBlock_ID map[int][]byte
+
+// }
 
 // This creates a sharing record, which is a key pointing to something
 // in the datastore to share with the recipient.
@@ -295,9 +343,6 @@ func (userdata *User) ReceiveFile(filename string, sender string,
 func (userdata *User) RevokeFile(filename string) (err error) {
 	return
 }
-
-
-
 
 
 //-------- helper functions --------//

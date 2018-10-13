@@ -24,13 +24,15 @@ type User struct {
 var datastore = make(map[string][]byte)
 
 func main() {
-	test_init_user()
+
+	password := "eliavelar"
+	username := "computerscienceEECS"
+	test_init_user(password, username)
 
 } 
 
-func  test_init_user() {
-	password := "eliavelar"
-	username := "computerscienceEECS"
+func  test_init_user(username string, password string) {
+	
 
 	Kpriv, _ := userlib.GenerateRSAKey()
 	//Kpubl := &Kpriv.PublicKey
@@ -38,6 +40,7 @@ func  test_init_user() {
 	//2. Generate Kgen, IV, and signature_id using Argon2 (salt=password). 
 	//Key length(36) : 16 bytes (key), 16 bytes (IV), 4 bytes (signature -- ID)
 	Fields_Generate := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	// fmt.Println(Fields_Generate)
 	Kgen := Fields_Generate[:16]
 	IV := Fields_Generate[16:32]
 	signature := Fields_Generate[32:]	
@@ -110,6 +113,10 @@ func  test_init_user() {
 	// fmt.Println(user_lookup_id)
 
 	
+}
+
+func GetUser_testing(username string, password string) {
+	return
 }
 
 func cfb_encrypt(key []byte,  plainText []byte, iv []byte) (cipherText []byte) {
