@@ -162,6 +162,9 @@ func testing_GetUser(username string, password string) (userdataptr *User, err e
 	// 4. Break up IV||E(struct) and decrypt the structure using Kgen
 	IV := IV_EncryptedStruct[:16]
 	E_struct := IV_EncryptedStruct[16:]
+	fmt.Println("this is the size of the struct")
+	fmt.Println(len(E_struct))
+	
 
 	//Decrypt then unmarshall data then get ID field
 	struct_marshall := cfb_decrypt(Kgen, E_struct, IV)
@@ -185,6 +188,8 @@ func testing_GetUser(username string, password string) (userdataptr *User, err e
 	mac := userlib.NewHMAC(Kgen)
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
+	fmt.Println("The size of the MAC is: ")
+	fmt.Println(len(expectedMAC))
 
     // Not sure if this is right way to compare but cannot compare using bytes.equals since cannnot import anything else
 	if string(expectedMAC) != string(signature_hmac) { 

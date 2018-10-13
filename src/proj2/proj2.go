@@ -266,14 +266,74 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	//NOTE: clean code using helper function if have time 
 	// 1. Reconstruct KgenF and IV using Argon2
+	argon_param := userdata.Username + "0"
+	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
+	KgenF := Fields_Generate[:16]
+	iv_file := Fields_Generate[16:32]
 
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
+	//Check if file in shared_files_
+	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// (pass=receiver's username || 0, salt=filename)
+	pass := userdata.Username + "0"
+	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
+	NKgenF := NewKgenF[:16]
+	iv_shared_files := NewKgenF[16:32]
+	//sig_id := NewKgenF[32:]
+
+    //get sha256 before looking for the file in the shared_files 
+    sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(NKgenF))
+	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
+
+	file_Encrypted_shared_, ok := userlib.DatastoreGet(file_lookup_id)
+
+    //check with shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+    if !ok{
+    	//Else check with files_
+		sha256 := userlib.NewSHA256()
+		sha256.Write([]byte(KgenF))
+		file_lookup_id := "files_" + string(sha256.Sum(nil))
+		file_Encrypted_files_, ok := userlib.DatastoreGet(file_lookup_id)
+		//check if the file exist here, if not then return errror 
+		if !ok{
+			return nil, errors.New("File does not exist")
+		}
+	}
+
 	// 3. Return an error if the file struct has been tampered with (check
 	// signature and HMAC)
+
+	//We need to get the key we'll decrypt with
+	if file_Encrypted_shared_{
+		struct_to_use := file_Encrypted_shared_
+		key_to_use := NKgenF
+		iv := iv_shared_files
+	}else{
+		struct_to_use := file_Encrypted_files_
+		key_to_use := KgenF
+		 iv := iv_file
+	}
+
+	//Get the HMAC 
+	mac := userlib.NewHMAC(key_to_use)
+	mac.Write(struct_to_use)
+	expected_fileHMAC := mac.Sum(nil)
+
+	//check it is the same hmac 
+	//First break the concatenated struct -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+	length_to_subtract := len(struct_to_use) - len(expected_fileHMAC)
+	HMAC_ := struct_to_use[length_to_subtract:]
+
+    //if not the same then return error 
+	if string(expectedMAC) != string(HMAC_) { 
+		return nil, errors.New("Found corrupted data")
+	}
 
 	// 4. For i = 1 to struct_0->count, return an error if file struct_i has been
 	// tampered
@@ -400,7 +460,15 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	// DataStore to prevent message reuses
 
 	// 4. Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// NOTE (Eli added): since this process will be repeated somewhere else 
+	// Let's make the ID of size 4, so 32 bytes total for IV and key and id 
 	// (pass=receiver's username || 0, salt=filename)
+
+
+///////NOTE!!!: we should get rid of the signature id's and just do:
+	 //"shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+     //Below this is already being implemented in append and store files 
+
 
 	// 5. Set struct->signature_id to be signature_id
 
