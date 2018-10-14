@@ -99,7 +99,10 @@ type User struct {
 
 // You can assume the user has a STRONG password
 func InitUser(username string, password string) (userdataptr *User, err error) {
-	var userdata User
+    //NOTE: If time allows, store user struct and HMAC as:
+    // "users_"||SHA256(Kgen) : IV||E(struct)||HMAC(E(struct))
+
+	//var userdata User
 
 	// 1. Generate RSA key-pair
 	Kpriv, _ := userlib.GenerateRSAKey()
@@ -113,7 +116,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	signature := Fields_Generate[32:]
 
 	// 3. Fill in struct (signature_id should be a random string)
-	userdata := User{Username: username, Password: password, Priv: Kpriv, Signature_Id: signature}
+	var userdata = User{Username: username, Password: password, Priv: Kpriv, Signature_Id: signature}
 
 	// 4. Encrypt struct with CFB (key=Kgen, IV=random string)
 	// Marshall User before encrypt
@@ -129,16 +132,16 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	mac := userlib.NewHMAC(Kgen)
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
-	userlib.datastore[user_data_store] = expectedMAC
+	userlib.DatastoreSet(user_data_store, expectedMAC)
 
 	// 7. Put "users_"||SHA256(Kgen) -> IV||E(struct) into DataStore
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
 	user_lookup_id := "users_" + string(sha256.Sum(nil))
-	userlib.datastore[user_lookup_id] = IV_EncryptedStruct
+	userlib.DatastoreSet(user_lookup_id, IV_EncryptedStruct)
 
 	// 8. Store RSA public key into KeyStore
-	keystore[username] = Kpubl
+	userlib.KeystoreSet(username, *Kpubl)
 
 	// 9. Return pointer to the struct
 	return &userdata, err
@@ -149,14 +152,14 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	// 1. Reconstruct Kgen using Argon2
-	bytes_generated := userlib.Argon2Key([]byte(username), []byte(password), 36)
+	bytes_generated := userlib.Argon2Key([]byte(password), []byte(username), 36)
 	Kgen := bytes_generated[:16]
 
 	// 2. Look up "users_"||SHA256(Kgen) in the DataStore and get the E(struct)||IV
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(Kgen))
-	user_lookup_id := "users_" + sha256.Sum(nil)
-	IV_EncryptedStruct, ok := DatastoreGet(user_lookup_id)
+	user_lookup_id := "users_" + string(sha256.Sum(nil))
+	IV_EncryptedStruct, ok := userlib.DatastoreGet(user_lookup_id)
 
 	// 3. If the id is not found in the DataStore, fail with an error
 	if !ok {
@@ -164,11 +167,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	}
 
 	// 4. Break up IV||E(struct) and decrypt the structure using Kgen
-	IV := encrypted_struct[:16]
-	E_struct := encrypted_struct[16:32]
+	IV := IV_EncryptedStruct[:16]
+	E_struct := IV_EncryptedStruct[16:]
 
 	//Decrypt then unmarshall data then get ID field
-	struct_marshall := cfb_decrypt(kgen, E_struct, IV)
+	struct_marshall := cfb_decrypt(Kgen, E_struct, IV)
 	var userStruct User
 	json.Unmarshal(struct_marshall, &userStruct)
 
@@ -176,7 +179,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	// get the Signature_HMAC
 	id := userStruct.Signature_Id
 	id_to_lookup := "signatures_" + string(id)
-	signature_hmac := datastore[id_to_lookup]
+	signature_hmac, ok := userlib.DatastoreGet(id_to_lookup)
+
+	if !ok {
+		return nil, errors.New("HMAC was not found")
+	}
 
 	// 6. Verify that HMAC(K_gen, IV||E(struct)) == Signature_HMAC and if not,
 	// fail with an error
@@ -184,13 +191,14 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
 
-	if expectedMAC != signature_hmac {
+    // Not sure if this is right way to compare but cannot compare using bytes.equals since cannnot import anything else
+	if string(expectedMAC) != string(signature_hmac) { 
 		return nil, errors.New("Found corrupted data")
 	}
 
 	// 7. Check that username == struct->username and password == struct->password,
 	// and if not, fail with an error
-	if userStruct.Username != Username {
+	if userStruct.Username != username {
 		return nil, errors.New("Wrong username")
 	}
 
@@ -199,10 +207,10 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 type File struct {
-	Data              string
+	Data              []byte
 	Count             int
 	Shared_With_Users []string
-	Signature_Id      []byte
+	// Signature_Id      []byte
 }
 
 // This stores a file in the datastore.
@@ -210,24 +218,45 @@ type File struct {
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
 	// Call _StoreFileHelper() with index = 0
+	(userdata)._StoreFileHelper(filename, data, 0) 
+
 }
 
 func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) {
-	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
-	//    (pass=username || 0, salt=filename)
+	// 1. Generate KgenF, IV 
+	//    (pass=username || 0, salt=filename) 
+	//u := &User
+	argon_param := userdata.Username + "0"
+	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
+	KgenF := Fields_Generate[:16]
+	iv := Fields_Generate[16:32]
 
 	// 2. Fill in a File struct with the filename, data, count integer,
 	//	  shared with users and signature_id
+	var users_shared []string
+	var fileStruct = File{Data: data, Count:index, Shared_With_Users:users_shared}
 
 	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
+	file_, _ := json.Marshal(fileStruct)
+	Encrypted_file := cfb_encrypt(KgenF, file_, iv)
 
 	// 4. Concat IV||E(struct)
+	IV_EncryptedStruct := append(iv, Encrypted_file...)
 
-	// 5. Put "signatures_"||signature_id -> HMAC(K_genF, IV||E(struct)) into
-	//    DataStore
 
-	// 6. Put "files_"||SHA256(KgenF) -> IV||E(struct) into DataStore
+	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
 
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(KgenF))
+	file_lookup_id := "files_" + string(sha256.Sum(nil))
+	
+	mac := userlib.NewHMAC(KgenF)
+	mac.Write(IV_EncryptedStruct)
+	expectedMAC := mac.Sum(nil)
+
+	IV_EncFile_HMAC := append(IV_EncryptedStruct, expectedMAC...)
+
+	userlib.DatastoreSet(file_lookup_id, IV_EncFile_HMAC)
 }
 
 // This adds on to an existing file.
@@ -237,14 +266,74 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	//NOTE: clean code using helper function if have time 
 	// 1. Reconstruct KgenF and IV using Argon2
+	argon_param := userdata.Username + "0"
+	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
+	KgenF := Fields_Generate[:16]
+	iv_file := Fields_Generate[16:32]
 
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
+	//Check if file in shared_files_
+	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// (pass=receiver's username || 0, salt=filename)
+	pass := userdata.Username + "0"
+	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
+	NKgenF := NewKgenF[:16]
+	iv_shared_files := NewKgenF[16:32]
+	//sig_id := NewKgenF[32:]
+
+    //get sha256 before looking for the file in the shared_files 
+    sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(NKgenF))
+	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
+
+	file_Encrypted_shared_, ok := userlib.DatastoreGet(file_lookup_id)
+
+    //check with shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+    if !ok{
+    	//Else check with files_
+		sha256 := userlib.NewSHA256()
+		sha256.Write([]byte(KgenF))
+		file_lookup_id := "files_" + string(sha256.Sum(nil))
+		file_Encrypted_files_, ok := userlib.DatastoreGet(file_lookup_id)
+		//check if the file exist here, if not then return errror 
+		if !ok{
+			return nil, errors.New("File does not exist")
+		}
+	}
+
 	// 3. Return an error if the file struct has been tampered with (check
 	// signature and HMAC)
+
+	//We need to get the key we'll decrypt with
+	if file_Encrypted_shared_{
+		struct_to_use := file_Encrypted_shared_
+		key_to_use := NKgenF
+		iv := iv_shared_files
+	}else{
+		struct_to_use := file_Encrypted_files_
+		key_to_use := KgenF
+		 iv := iv_file
+	}
+
+	//Get the HMAC 
+	mac := userlib.NewHMAC(key_to_use)
+	mac.Write(struct_to_use)
+	expected_fileHMAC := mac.Sum(nil)
+
+	//check it is the same hmac 
+	//First break the concatenated struct -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+	length_to_subtract := len(struct_to_use) - len(expected_fileHMAC)
+	HMAC_ := struct_to_use[length_to_subtract:]
+
+    //if not the same then return error 
+	if string(expectedMAC) != string(HMAC_) { 
+		return nil, errors.New("Found corrupted data")
+	}
 
 	// 4. For i = 1 to struct_0->count, return an error if file struct_i has been
 	// tampered
@@ -371,7 +460,15 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	// DataStore to prevent message reuses
 
 	// 4. Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// NOTE (Eli added): since this process will be repeated somewhere else 
+	// Let's make the ID of size 4, so 32 bytes total for IV and key and id 
 	// (pass=receiver's username || 0, salt=filename)
+
+
+///////NOTE!!!: we should get rid of the signature id's and just do:
+	 //"shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+     //Below this is already being implemented in append and store files 
+
 
 	// 5. Set struct->signature_id to be signature_id
 
