@@ -244,7 +244,6 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 	IV_EncryptedStruct := append(iv, Encrypted_file...)
 
 	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
-
 	sha256 := userlib.NewSHA256()
 	sha256.Write([]byte(KgenF))
 	file_lookup_id := "files_" + string(sha256.Sum(nil))
@@ -265,45 +264,112 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	//NOTE: clean code using helper function if have time
+	// NOTE: Clean code using helper function if have time.
+
 	// 1. Reconstruct KgenF and IV using Argon2
 	argon_param := userdata.Username + "0"
 	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
 	KgenF := Fields_Generate[:16]
-	iv_file := Fields_Generate[16:32]
+	fileIV := Fields_Generate[16:32]
 
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
-	//Check if file in shared_files_
-	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
-	// (pass=receiver's username || 0, salt=filename)
-	pass := userdata.Username + "0"
-	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
-	NKgenF := NewKgenF[:16]
-	iv_shared_files := NewKgenF[16:32]
-	//sig_id := NewKgenF[32:]
-
-	//get sha256 before looking for the file in the shared_files
+	// 2.1. Look up the file in the "shared_files_" namespace
 	sha256 := userlib.NewSHA256()
-	sha256.Write([]byte(NKgenF))
-	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
+	sha256.Write([]byte(KgenF))
+	lookupID := string(sha256.Sum(nil))
+	sharedFilesLookupID := "shared_files_" + lookupID
+	encryptedSharingRecordWithIV, ok := userlib.DatastoreGet(sharedFilesLookupID)
 
-	file_Encrypted_shared_, ok := userlib.DatastoreGet(file_lookup_id)
+	// 2.2. If found, do conversion. That is, get the actual REAL file.
+	if ok {
+		// Decrypt the sharing record
+		sharingRecordIV := encryptedSharingRecordWithIV[:16]
+		encryptedSharingRecord := encryptedSharingRecordWithIV[16:]
+		marshalledSharingRecord := cfb_decrypt(KgenF, encryptedSharingRecord, sharingRecordIV)
+		var sharingRecordStruct sharingRecord
+		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
 
-	//check with shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
-	if !ok {
-		//Else check with files_
-		sha256 := userlib.NewSHA256()
+		// Get the realKgenF
+		KgenF := sharingRecordStruct.File_Key
+
+		// Make the realFileLookupID from the realKgenF
+		sha256 = userlib.NewSHA256()
 		sha256.Write([]byte(KgenF))
-		file_lookup_id := "files_" + string(sha256.Sum(nil))
-		file_Encrypted_files_, ok := userlib.DatastoreGet(file_lookup_id)
-		//check if the file exist here, if not then return errror
+		realFileLookupID := "files_" + string(sha256.Sum(nil))
+
+		// Look up the realFile, verify its integrity, and decrypt it
+		realEncryptedFileWithIVAndHMAC, ok := userlib.DatastoreGet(realFileLookupID)
+
 		if !ok {
-			return nil, errors.New("File does not exist")
+			// File was deleted!
+			return errors.New("File does not exist.")
+		}
+
+		// 2.3. If not found, look the file up in the "files_" namespace.
+	} else {
+		realFileLookupID := "files_" + lookupID
+		encryptedFileWithIVAndHMAC, ok := userlib.DatastoreGet(realFileLookupID)
+
+		if !ok {
+			return errors.New("File does not exist.")
 		}
 	}
+
+	size := len(encryptedFileWithIVAndHMAC)
+	fileStuctHMAC := encryptedFileWithIVAndHMAC[size-16 : size]
+	encryptedFileStructWithIV := encryptedFileWithIVAndHMAC[:size-16]
+
+	mac := userlib.NewHMAC(KgenF)
+	mac.Write(encryptedFileStructWithIV)
+	expectedMAC := mac.Sum(nil)
+
+	// Check the HMACs [NOTE: I don't know how.]
+	// if expectedMAC != fileStuctHMAC {
+	// 	// File integrity was compromised!
+	// 	return errors.New("An error occurred.")
+	// }
+
+	fileIV := encryptedFileStructWithIV[:16]
+	encryptedFileStruct := encryptedFileStructWithIV[16:]
+	marshalledFileStruct := cfb_decrypt(KgenF, encryptedFileStruct, fileIV)
+	var fileStruct File
+	json.Unmarshal(marshalledFileStruct, &fileStruct)
+
+	/////////
+
+	// //Check if file in shared_files_
+	// //Generate NewKgenF, IV and signature_id using Argon2 with parameters
+	// // (pass=receiver's username || 0, salt=filename)
+	// pass := userdata.Username + "0"
+	// NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
+	// NKgenF := NewKgenF[:16]
+	// iv_shared_files := NewKgenF[16:32]
+	// //sig_id := NewKgenF[32:]
+	//
+	// //get sha256 before looking for the file in the shared_files
+	// sha256 := userlib.NewSHA256()
+	// sha256.Write([]byte(NKgenF))
+	// file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
+	//
+	// file_Encrypted_shared_, ok := userlib.DatastoreGet(file_lookup_id)
+	//
+	// //check with shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
+	// if !ok {
+	// 	//Else check with files_
+	// 	sha256 := userlib.NewSHA256()
+	// 	sha256.Write([]byte(KgenF))
+	// 	file_lookup_id := "files_" + string(sha256.Sum(nil))
+	// 	file_Encrypted_files_, ok := userlib.DatastoreGet(file_lookup_id)
+	// 	//check if the file exist here, if not then return errror
+	// 	if !ok {
+	// 		return nil, errors.New("File does not exist")
+	// 	}
+	// }
+
+	//////////
 
 	// 3. Return an error if the file struct has been tampered with (check
 	// signature and HMAC)
@@ -384,7 +450,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 type sharingRecord struct {
 	Receiver     string
 	File_Key     []byte
-	Iv           []byte
+	Iv           []byte // NOTE: we may not need this here.
 	Signature_Id []byte
 }
 
