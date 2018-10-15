@@ -170,7 +170,7 @@ func TestGetUserWithCorruptedData(t *testing.T) {
 }
 
 
-This test passes  
+//This test passes  
 func TestStorageValid(t *testing.T) {
   	user1, v1 := InitUser("Elizabeth", "Avelar")
     user2, v2 := InitUser("Georgy", "Marrero")
