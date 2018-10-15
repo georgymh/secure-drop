@@ -2,7 +2,7 @@ package proj2
 
 import "github.com/nweaver/cs161-p2/userlib"
 import "testing"
-import "reflect"
+// import "reflect"
 
 // You can actually import other stuff if you want IN YOUR TEST
 // HARNESS ONLY.  Note that this is NOT considered part of your
@@ -84,7 +84,46 @@ func TestShare(t *testing.T) {
 }
 
 
-//------------------ Extra tests ----------------------------------//
+// //------------------ Extra tests ----------------------------------//
+
+// Test for creating and getting multiple users
+func TestInitAndGetMultiple(t *testing.T) {
+	//userlib.DatastoreClear()
+	userlib.DebugPrint = false
+	u, err := InitUser("alice", "fubar")
+	y, errTwo := InitUser("Bob", "fubar")
+    z, errThree := InitUser("Nick", "Waiver")
+	if err != nil || errTwo != nil || errThree != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+	}
+	// t.Log() only produces output if you run with "go test -v"
+	t.Log("Got user", u)
+	t.Log("Got user", y)
+	t.Log("Got user", z)
+	// You probably want many more tests here.
+    
+    z1, e1 := GetUser("Nick", "Waiver")
+	if e1 != nil {
+		t.Error("Failed to reload user", e1)
+		return
+	}
+
+    u1, e2 := GetUser("alice", "fubar")
+	if e2 != nil {
+		t.Error("Failed to reload user", e2)
+		return
+	}
+	t.Log("Loaded user", u1)
+	t.Log("Loaded user", z1)
+
+	v1 := []byte("This is a test")
+	u1.StoreFile("file1", v1)
+
+	v2 := []byte("Checking if user test")
+	z1.StoreFile("file1", v2)
+}
+
 func Test_Get_User(t *testing.T) {
     user1, e1 := InitUser("cs161-p2", "csiscool")
     user2, e2 := GetUser("cs161-p2", "csiscool")
@@ -100,7 +139,6 @@ func Test_Get_User(t *testing.T) {
         }
     }
 }
-
 
 // //Test append 
 func TestAppend(t *testing.T) {
