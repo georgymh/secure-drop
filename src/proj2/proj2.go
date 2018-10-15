@@ -208,54 +208,66 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 
 type File struct {
 	Data              []byte
-	Count             int
+	OtherFiles        []string
 	Shared_With_Users []string
-	// Signature_Id      []byte
 }
 
 // This stores a file in the datastore.
 //
 // The name of the file should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
-	// Call _StoreFileHelper() with index = 0
-	(userdata)._StoreFileHelper(filename, data, 0)
+	// Prepare metadata
+	Fields_Generate := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
+	KgenF := Fields_Generate[:16]
+	IV := Fields_Generate[16:32]
 
+	// Call _StoreFileHelper()
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(KgenF))
+	fileLookupID := "files_" + string(sha256.Sum(nil))
+	(userdata)._StoreFileHelper(fileLookupID, KgenF, IV, data)
 }
 
-func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) {
-	// 1. Generate KgenF, IV
-	//    (pass=username || 0, salt=filename)
-	//u := &User
-	argon_param := userdata.Username + "0"
-	Fields_Generate := userlib.Argon2Key([]byte(argon_param), []byte(filename), 32)
-	KgenF := Fields_Generate[:16]
-	iv := Fields_Generate[16:32]
-
-	// 2. Fill in a File struct with the filename, data, count integer,
-	//	  shared with users and signature_id
+func (userdata *User) _StoreFileHelper(lookupID string, KgenF []byte, IV []byte, data []byte) {
+	// 1. Fill in a File struct with the data, count integer, & users shared with.
 	var users_shared []string
-	var fileStruct = File{Data: data, Count: index, Shared_With_Users: users_shared}
+	var otherFiles []string
+	var fileStruct = File{Data: data, OtherFiles: otherFiles, Shared_With_Users: users_shared}
 
 	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
 	file_, _ := json.Marshal(fileStruct)
-	Encrypted_file := cfb_encrypt(KgenF, file_, iv)
+	Encrypted_file := cfb_encrypt(KgenF, file_, IV)
 
 	// 4. Concat IV||E(struct)
-	IV_EncryptedStruct := append(iv, Encrypted_file...)
+	IV_EncryptedStruct := append(IV, Encrypted_file...)
 
 	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
-
-	sha256 := userlib.NewSHA256()
-	sha256.Write([]byte(KgenF))
-	file_lookup_id := "files_" + string(sha256.Sum(nil))
-
 	mac := userlib.NewHMAC(KgenF)
 	mac.Write(IV_EncryptedStruct)
 	expectedMAC := mac.Sum(nil)
-
 	IV_EncFile_HMAC := append(IV_EncryptedStruct, expectedMAC...)
+	userlib.DatastoreSet(lookupID, IV_EncFile_HMAC)
+}
 
-	userlib.DatastoreSet(file_lookup_id, IV_EncFile_HMAC)
+func (userdata *User) _ModifyFileHelper(lookupID string, KgenF []byte, IV []byte, fileStruct *File, newChunkLookupID string) {
+	// 1. Fill in a File struct with the data, count integer, & users shared with.
+	var otherFiles = fileStruct.OtherFiles
+	otherFiles = append(otherFiles, newChunkLookupID)
+	var newFileStruct = File{Data: fileStruct.Data, OtherFiles: otherFiles, Shared_With_Users: fileStruct.Shared_With_Users}
+
+	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
+	file_, _ := json.Marshal(newFileStruct)
+	encryptedFile := cfb_encrypt(KgenF, file_, IV)
+
+	// 4. Concat IV||E(struct)
+	IVAndEncryptedFile := append(IV, encryptedFile...)
+
+	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
+	mac := userlib.NewHMAC(KgenF)
+	mac.Write(IVAndEncryptedFile)
+	expectedMAC := mac.Sum(nil)
+	IVAndEncryptedFileAndHMAC := append(IVAndEncryptedFile, expectedMAC...)
+	userlib.DatastoreSet(lookupID, IVAndEncryptedFileAndHMAC)
 }
 
 // This adds on to an existing file.
@@ -265,11 +277,8 @@ func (userdata *User) _StoreFileHelper(filename string, data []byte, index int) 
 // metadata you need.
 
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	// NOTE: Clean code using helper function if have time.
-
 	// 1. Reconstruct KgenF using Argon2
-	argonParameters := userdata.Username + "0"
-	KgenF := userlib.Argon2Key([]byte(argonParameters), []byte(filename), 16)
+	KgenF := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 16)
 
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
@@ -282,8 +291,9 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	sharedFilesLookupID := "shared_files_" + lookupID
 	encryptedSharingRecordWithIV, ok := userlib.DatastoreGet(sharedFilesLookupID)
 
-	// 2.2. If found, do conversion. That is, get the actual REAL file.
+	// 2.2. If found, do conversion. That is, get the actual, REAL file.
 	var encryptedFileWithIVAndHMAC []byte
+	var fileLookupID string
 	if ok {
 		// Decrypt the sharing record
 		sharingRecordIV := encryptedSharingRecordWithIV[:16]
@@ -293,29 +303,20 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
 
 		// Get the realKgenF
-		KgenF := sharingRecordStruct.File_Key
+		KgenF = sharingRecordStruct.File_Key
 
 		// Make the realFileLookupID from the realKgenF
 		sha256 = userlib.NewSHA256()
 		sha256.Write([]byte(KgenF))
-		fileLookupID := "files_" + string(sha256.Sum(nil))
+		lookupID = string(sha256.Sum(nil))
+	}
 
-		// Look up the realFile, verify its integrity, and decrypt it
-		encryptedFileWithIVAndHMAC, ok = userlib.DatastoreGet(fileLookupID)
+	// 2.3. Look the file up in the "files_" namespace.
+	fileLookupID = "files_" + lookupID
+	encryptedFileWithIVAndHMAC, ok = userlib.DatastoreGet(fileLookupID)
 
-		if !ok {
-			// File was deleted!
-			return errors.New("File does not exist.")
-		}
-
-		// 2.3. If not found, look the file up in the "files_" namespace.
-	} else {
-		fileLookupID := "files_" + lookupID
-		encryptedFileWithIVAndHMAC, ok = userlib.DatastoreGet(fileLookupID)
-
-		if !ok {
-			return errors.New("File does not exist.")
-		}
+	if !ok {
+		return errors.New("File does not exist.")
 	}
 
 	// 2.4. Break down the structure
@@ -331,7 +332,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	json.Unmarshal(marshalledFileStruct, &fileStruct)
 
 	// 3. Return an error if the file struct has been tampered with (check
-	// signature and HMAC)
+	// signature and HMAC) [Optional check]
 	mac := userlib.NewHMAC(KgenF)
 	mac.Write(encryptedFileStructWithIV)
 	expectedMAC := mac.Sum(nil)
@@ -340,15 +341,15 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		return errors.New("An error occurred.")
 	}
 
-	// 4. For i = 1 to struct_0->count, return an error if file struct_i has been
-	// tampered
+	// 4. Store the new file chunk in DataStore
+	// (with some random bytes added in the creation of the key)
+	newChunkLookupID := uuid.New().String()
+	(userdata)._StoreFileHelper(newChunkLookupID, KgenF, fileIV, data)
 
-	// 5. Add 1 to the count on the struct
+	// 5. Make this file chunk be connected to the end of the file chunk list.
+	(userdata)._ModifyFileHelper(fileLookupID, KgenF, fileIV, &fileStruct, newChunkLookupID)
 
-	// 6. Update the File structure and signature in DataStore
-
-	// 7. Call _StoreFileHelper on the new appended data with index = count + 1
-	return
+	return nil
 }
 
 // This loads a file from the Datastore.
