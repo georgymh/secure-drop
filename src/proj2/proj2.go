@@ -358,58 +358,58 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // This loads a file from the Datastore.
 //
 // It should give an error if the file is corrupted in any way.
-func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
-	pass := userdata.Username + "0"
-	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
-	NKgenF := NewKgenF[:16]
-	iv_shared_files := NewKgenF[16:32]
+// func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+// 	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
+// 	pass := userdata.Username + "0"
+// 	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
+// 	NKgenF := NewKgenF[:16]
+// 	iv_shared_files := NewKgenF[16:32]
 
-	// 2. Get and decrypt the File struct from DataStore
-	// (NOTE: first look for it in the namespace "shared_files_". Do the
-	//	conversion if found, otherwise look at the "files_" namespace)
+// 	// 2. Get and decrypt the File struct from DataStore
+// 	// (NOTE: first look for it in the namespace "shared_files_". Do the
+// 	//	conversion if found, otherwise look at the "files_" namespace)
 
-	//Check if file in shared_files_
-	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
-	// (pass=receiver's username || 0, salt=filename)
+// 	//Check if file in shared_files_
+// 	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
+// 	// (pass=receiver's username || 0, salt=filename)
 
-	//get sha256 before looking for the file in the shared_files
-	sha256 := userlib.NewSHA256()
-	sha256.Write([]byte(NKgenF))
-	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
-	file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
+// 	//get sha256 before looking for the file in the shared_files
+// 	sha256 := userlib.NewSHA256()
+// 	sha256.Write([]byte(NKgenF))
+// 	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
+// 	file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
 
-	//check with shared_files_"||SHA256(NKgenF) -> IV||E(struct)||HMAC(NKgenF, IV||E(struct))
-	if !ok {
-		file_lookup_id := "files_" + string(sha256.Sum(nil))
-		file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
-		// 3. Return nil if record not found
-		if !ok {
-			return nil, errors.New("File does not exist")
-		}
-	}
+// 	//check with shared_files_"||SHA256(NKgenF) -> IV||E(struct)||HMAC(NKgenF, IV||E(struct))
+// 	if !ok {
+// 		file_lookup_id := "files_" + string(sha256.Sum(nil))
+// 		file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
+// 		// 3. Return nil if record not found
+// 		if !ok {
+// 			return nil, errors.New("File does not exist")
+// 		}
+// 	}
 
-	// 4. Return an error if the file struct_0 has been tampered with (check
-	// signature and HMAC)
+// 	// 4. Return an error if the file struct_0 has been tampered with (check
+// 	// signature and HMAC)
 
-	// 5. Retrieve the count from the structure
+// 	// 5. Retrieve the count from the structure
 
-	// 6. Initialize all_data variable with struct_0->data
+// 	// 6. Initialize all_data variable with struct_0->data
 
-	// 7. For i between 1 and count (inclusive)
+// 	// 7. For i between 1 and count (inclusive)
 
-	// 7.a. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = i)
+// 	// 7.a. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = i)
 
-	// 7.b. Get and decrypt the File struct from DataStore
+// 	// 7.b. Get and decrypt the File struct from DataStore
 
-	// 7.c. Return an error if the file struct_i has been tampered with (check
-	// signature and HMAC)
+// 	// 7.c. Return an error if the file struct_i has been tampered with (check
+// 	// signature and HMAC)
 
-	// 7.d. Append struct_i->data to all_data
+// 	// 7.d. Append struct_i->data to all_data
 
-	// 8. Return all_data
-	return
-}
+// 	// 8. Return all_data
+// 	return
+// }
 
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.

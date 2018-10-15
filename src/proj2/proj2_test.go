@@ -99,34 +99,91 @@ func Test_Get_User(t *testing.T) {
     }
 }
 
-//Debugging test case 
-// func TestCorruptDataAndGetUser(t *testing.T) {
-//    userlib.DatastoreClear()
-//    _, e1 := InitUser("Berkeley", "EECS")
-//    if e1 != nil {
+
+// //Test append 
+func TestAppend(t *testing.T) {
+    user1, e := InitUser("Berkeley", "CS161")
+    if e != nil {
+        t.Error("User1 could not be created", e)
+    }
+    //v := []byte("contents of the file")
+    u := []byte("Berkeley is a great")
+    user1.StoreFile("BerkeleyFile", u)
+    u1, err1 := user1.LoadFile("BerkeleyFile")
+    if err1 != nil {
+        t.Error("Failed to upload and download", err1)
+    }
+
+	if u1 == nil {
+		t.Error("Download failed")
+    }
+
+    content_two := []byte("We have the best cs program")
+    err2 := user1.AppendFile("BerkeleyFile", content_two)
+
+    if err2 != nil {
+        t.Error("Error appending the file")
+    }
+
+    u3, err3 := user1.LoadFile("BerkeleyFile")
+    if err3 != nil {
+        t.Error("Failed to upload and download", err3)
+    }
+
+    u4 := []byte("Berkeley is a greatWe have the best cs program")
+    if !reflect.DeepEqual(u3, u4) {
+        t.Error("Append Mistmatch", u3, u4)
+    }
+}
+
+
+//Testing corrupting data user 
+func TestGetUserWithCorruptedData(t *testing.T) {
+   userlib.DatastoreClear()
+   _, e1 := InitUser("Berkeley", "EECS")
+   if e1 != nil {
+        t.Error("User1 could not be created")
+   }
+   _, e2 := InitUser("Nick", "waver")
+   if e2 != nil {
+        t.Error("User2 could not be created")
+   }
+   m := userlib.DatastoreGetMap()
+   //len_ := range m;
+   var val [4][]byte
+   var keys [6]string
+   var i = 0
+   for k, _ := range m {
+       val[i] = m[k]
+       keys[i] = k
+       i += 1
+   }
+   userlib.DatastoreSet(keys[0], val[1])
+   userlib.DatastoreSet(keys[1], val[0])
+   _, eer := GetUser("Berkeley", "EECS")
+   if eer == nil {
+        t.Error("Accessed corrupted data of user", eer)
+   }
+	 userlib.DatastoreClear()
+}
+
+
+// /// Test for File integrity 
+// func TestStorageValid(t *testing.T) {
+//   	user1, v := InitUser("Elizabeth", "Avelar")
+//    user2, v2 := InitUser("Georgy", "Marrero")
+//    if v2 != nil || v != nil {
 //         t.Error("User1 could not be created")
-//    }
-//    _, e2 := InitUser("Nick", "waver")
-//    if e2 != nil {
-//         t.Error("User2 could not be created")
-//    }
-//    m := userlib.DatastoreGetMap()
-//    var val [2][]byte
-//    var keys [2]string
-//    var i = 0
-//    for k, _ := range m {
-//        val[i] = m[k]
-//        keys[i] = k
-//        i += 1
-//    }
-//    userlib.DatastoreSet(keys[0], val[1])
-//    userlib.DatastoreSet(keys[1], val[0])
-//    _, eer := GetUser("Berkeley", "EECS")
-//    if eer == nil {
-//         t.Error("Accessed corrupted data of user", eer)
-//    }
-// 	 userlib.DatastoreClear()
+//         return
+//     }
+//     ElizabethFile := []byte("Elizabeth Uploaded File")
+//     user1.StoreFile("anikaFile", ElizabethFile)
+//     v2, err1 := user2.LoadFile("anikaFile")
+//     if reflect.DeepEqual(anika_file, v2) {
+//         t.Error("Attacker has been able to read the contents of other user's file", err1)
+//     }
 // }
+
 
 
 
