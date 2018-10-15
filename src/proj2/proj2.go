@@ -192,9 +192,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	expectedMAC := mac.Sum(nil)
 
 	// Not sure if this is right way to compare but cannot compare using bytes.equals since cannnot import anything else
-	
+
 	if !userlib.Equal(expectedMAC, signature_hmac) {
-	//if string(expectedMAC) != string(signature_hmac) {
+		//if string(expectedMAC) != string(signature_hmac) {
 		return nil, errors.New("Found corrupted data")
 	}
 
@@ -272,24 +272,12 @@ func (userdata *User) _ModifyFileHelper(lookupID string, KgenF []byte, IV []byte
 	userlib.DatastoreSet(lookupID, IVAndEncryptedFileAndHMAC)
 }
 
-// This adds on to an existing file.
-//
-// Append should be efficient, you shouldn't rewrite or reencrypt the
-// existing file, but only whatever additional information and
-// metadata you need.
-
-func (userdata *User) AppendFile(filename string, data []byte) (err error) {
-	// 1. Reconstruct KgenF using Argon2
-	KgenF := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 16)
-
+func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte) (filePtr *File, newKgenF []byte, newFileIV []byte, err error) {
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
 
 	// 2.1. Look up the file in the "shared_files_" namespace
-	sha256 := userlib.NewSHA256()
-	sha256.Write([]byte(KgenF))
-	lookupID := string(sha256.Sum(nil))
 	sharedFilesLookupID := "shared_files_" + lookupID
 	encryptedSharingRecordWithIV, ok := userlib.DatastoreGet(sharedFilesLookupID)
 
@@ -304,11 +292,12 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		var sharingRecordStruct sharingRecord
 		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
 
-		// Get the realKgenF
+		// Get the realKgenF and realIV
 		KgenF = sharingRecordStruct.File_Key
+		IV = sharingRecordStruct.Iv
 
 		// Make the realFileLookupID from the realKgenF
-		sha256 = userlib.NewSHA256()
+		sha256 := userlib.NewSHA256()
 		sha256.Write([]byte(KgenF))
 		lookupID = string(sha256.Sum(nil))
 	}
@@ -318,7 +307,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	encryptedFileWithIVAndHMAC, ok = userlib.DatastoreGet(fileLookupID)
 
 	if !ok {
-		return errors.New("File does not exist.")
+		var dummyBytes []byte
+		return nil, dummyBytes, dummyBytes, errors.New("File does not exist.")
 	}
 
 	// 2.4. Break down the structure
@@ -338,19 +328,49 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	mac := userlib.NewHMAC(KgenF)
 	mac.Write(encryptedFileStructWithIV)
 	expectedMAC := mac.Sum(nil)
-	
+
 	if !userlib.Equal(expectedMAC, fileStuctHMAC) {
 		// File integrity was compromised!
-		return errors.New("An error occurred.")
+		var dummyBytes []byte
+		return nil, dummyBytes, dummyBytes, errors.New("An error occurred.")
+	}
+
+	return &fileStruct, KgenF, IV, err
+}
+
+// This adds on to an existing file.
+//
+// Append should be efficient, you shouldn't rewrite or reencrypt the
+// existing file, but only whatever additional information and
+// metadata you need.
+
+func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	// 1. Reconstruct KgenF using Argon2
+	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
+	KgenF := output[:16]
+	fileIV := output[16:32]
+
+	// 2. Get and verify the file structure from DataStore
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(KgenF))
+	lookupID := string(sha256.Sum(nil))
+	fileStruct, newKgenF, newFileIV, err := (userdata)._GetAndVerifyFile(lookupID, KgenF, fileIV)
+
+	// 3. Check no errors occurred
+	if err != nil {
+		return err
 	}
 
 	// 4. Store the new file chunk in DataStore
 	// (with some random bytes added in the creation of the key)
 	newChunkLookupID := uuid.New().String()
-	(userdata)._StoreFileHelper(newChunkLookupID, KgenF, fileIV, data)
+	(userdata)._StoreFileHelper(newChunkLookupID, newKgenF, newFileIV, data)
 
 	// 5. Make this file chunk be connected to the end of the file chunk list.
-	(userdata)._ModifyFileHelper(fileLookupID, KgenF, fileIV, &fileStruct, newChunkLookupID)
+	sha256 = userlib.NewSHA256()
+	sha256.Write([]byte(newKgenF))
+	fileLookupID := string(sha256.Sum(nil))
+	(userdata)._ModifyFileHelper(fileLookupID, newKgenF, newFileIV, fileStruct, newChunkLookupID)
 
 	return nil
 }
@@ -359,56 +379,41 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 //
 // It should give an error if the file is corrupted in any way.
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
-	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
-	pass := userdata.Username + "0"
-	NewKgenF := userlib.Argon2Key([]byte(pass), []byte(filename), 32)
-	NKgenF := NewKgenF[:16]
-	iv_shared_files := NewKgenF[16:32]
+	// 1. Reconstruct KgenF and IV using Argon2
+	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
+	KgenF := output[:16]
+	IV := output[16:32]
 
-	// 2. Get and decrypt the File struct from DataStore
-	// (NOTE: first look for it in the namespace "shared_files_". Do the
-	//	conversion if found, otherwise look at the "files_" namespace)
-
-	//Check if file in shared_files_
-	//Generate NewKgenF, IV and signature_id using Argon2 with parameters
-	// (pass=receiver's username || 0, salt=filename)
-
-	//get sha256 before looking for the file in the shared_files
+	// 2. Get and verify the file structure from DataStore
 	sha256 := userlib.NewSHA256()
-	sha256.Write([]byte(NKgenF))
-	file_lookup_id := "shared_files_" + string(sha256.Sum(nil))
-	file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
+	sha256.Write([]byte(KgenF))
+	lookupID := string(sha256.Sum(nil))
+	fileStruct, newKgenF, newFileIV, err := (userdata)._GetAndVerifyFile(lookupID, KgenF, IV)
 
-	//check with shared_files_"||SHA256(NKgenF) -> IV||E(struct)||HMAC(NKgenF, IV||E(struct))
-	if !ok {
-		file_lookup_id := "files_" + string(sha256.Sum(nil))
-		file_Encrypted, ok := userlib.DatastoreGet(file_lookup_id)
-		// 3. Return nil if record not found
-		if !ok {
-			return nil, errors.New("File does not exist")
-		}
+	// 3. Return nil if record not found or has been tampered with
+	if err != nil {
+		var dummyData []byte
+		return dummyData, err
 	}
 
-	// 4. Return an error if the file struct_0 has been tampered with (check
-	// signature and HMAC)
+	// 4. Add the first chunk of data to allData
+	var allData []byte
+	allData = append(allData, fileStruct.Data...)
 
-	// 5. Retrieve the count from the structure
+	// 5. Add the other chunks of data to allData
+	// (while verifying the chunk exists and the integrity is preserved)
+	var chunk *File
+	for i := 0; i < len(fileStruct.OtherFiles); i++ {
+		chunk, _, _, err = (userdata)._GetAndVerifyFile(fileStruct.OtherFiles[i], newKgenF, newFileIV)
+		if err != nil {
+			var dummyData []byte
+			return dummyData, err
+		}
+		allData = append(allData, chunk.Data...)
+	}
 
-	// 6. Initialize all_data variable with struct_0->data
-
-	// 7. For i between 1 and count (inclusive)
-
-	// 7.a. Reconstruct KgenF, IV, and signature_id using Argon2 (using index = i)
-
-	// 7.b. Get and decrypt the File struct from DataStore
-
-	// 7.c. Return an error if the file struct_i has been tampered with (check
-	// signature and HMAC)
-
-	// 7.d. Append struct_i->data to all_data
-
-	// 8. Return all_data
-	return
+	// 6. Return all the data
+	return allData, err
 }
 
 // You may want to define what you actually want to pass as a
