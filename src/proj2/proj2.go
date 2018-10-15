@@ -192,7 +192,9 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	expectedMAC := mac.Sum(nil)
 
 	// Not sure if this is right way to compare but cannot compare using bytes.equals since cannnot import anything else
-	if string(expectedMAC) != string(signature_hmac) {
+	
+	if !userlib.Equal(expectedMAC, signature_hmac) {
+	//if string(expectedMAC) != string(signature_hmac) {
 		return nil, errors.New("Found corrupted data")
 	}
 
@@ -336,7 +338,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	mac := userlib.NewHMAC(KgenF)
 	mac.Write(encryptedFileStructWithIV)
 	expectedMAC := mac.Sum(nil)
-	if string(expectedMAC) != string(fileStuctHMAC) {
+	
+	if !userlib.Equal(expectedMAC, fileStuctHMAC) {
 		// File integrity was compromised!
 		return errors.New("An error occurred.")
 	}
