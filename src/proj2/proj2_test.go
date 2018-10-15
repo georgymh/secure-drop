@@ -188,7 +188,7 @@ func TestStorageValid(t *testing.T) {
 
 func TestForSharingAndRecieving(t *testing.T) {
 	userlib.DatastoreClear()    
-    _, e1 := InitUser("Nick", "waiver")
+    _, e1 := InitUser("Nick", "Waiver")
     if e1 != nil {
         t.Error("Failed to initialize user1", e1)
     }
@@ -198,7 +198,7 @@ func TestForSharingAndRecieving(t *testing.T) {
     }
     user2, e3 := InitUser("Scott", "Shenker")
     if e3 != nil {
-        t.Error("Failed to initialize USER2", e3)
+        t.Error("Failed to initialize user2", e3)
     }
     var v []byte
     var msgid string
@@ -214,7 +214,7 @@ func TestForSharingAndRecieving(t *testing.T) {
         t.Error("Failed to share the a file", e5)
     }
     //_ = u.RevokeFile("file1")
-    e6 := user2.ReceiveFile("file2", "alice", msgid)
+    e6 := user2.ReceiveFile("file2", "Nick", msgid)
     if e6 != nil {
         t.Error("Failed to receive the share message", e6)
     }
