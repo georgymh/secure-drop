@@ -309,13 +309,13 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 
 	if !ok {
 		var dummyBytes []byte
-		return nil, dummyBytes, dummyBytes, errors.New("File does not exist.")
+		return nil, dummyBytes, dummyBytes, errors.New("File does not exist")
 	}
 
 	// 2.4. Break down the structure
 	size := len(encryptedFileWithIVAndHMAC)
-	fileStuctHMAC := encryptedFileWithIVAndHMAC[size-16 : size]
-	encryptedFileStructWithIV := encryptedFileWithIVAndHMAC[:size-16]
+	fileStuctHMAC := encryptedFileWithIVAndHMAC[size-32 : size]
+	encryptedFileStructWithIV := encryptedFileWithIVAndHMAC[:size-32]
 
 	// 2.5. Decrypt and unmarshall the file
 	fileIV := encryptedFileStructWithIV[:16]
@@ -333,7 +333,7 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 	if !userlib.Equal(expectedMAC, fileStuctHMAC) {
 		// File integrity was compromised!
 		var dummyBytes []byte
-		return nil, dummyBytes, dummyBytes, errors.New("An error occurred.")
+		return nil, dummyBytes, dummyBytes, errors.New("An integrity error occurred")
 	}
 
 	return &fileStruct, KgenF, IV, err
@@ -399,7 +399,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
 	// 4. Add the first chunk of data to allData
 	var allData []byte
-	allData = append(allData, fileStruct.Data...)
+	allData = append(allData, (fileStruct).Data...)
 
 	// 5. Add the other chunks of data to allData
 	// (while verifying the chunk exists and the integrity is preserved)
