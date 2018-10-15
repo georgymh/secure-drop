@@ -24,7 +24,10 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
+
+// This test does not pass ?
 func TestStorage(t *testing.T) {
+	userlib.DatastoreClear() 
 	// And some more tests, because
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
@@ -36,50 +39,50 @@ func TestStorage(t *testing.T) {
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
 
-	// v2, err2 := u.LoadFile("file1")
-	// if err2 != nil {
-	// 	t.Error("Failed to upload and download", err2)
-	// }
-	// if !reflect.DeepEqual(v, v2) {
-	// 	t.Error("Downloaded file is not the same", v, v2)
-	// }
+	v2, err2 := u.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Failed to upload and download", err2)
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Downloaded file is not the same", v, v2)
+	}
 }
 
-// func TestShare(t *testing.T) {
-// 	u, err := GetUser("alice", "fubar")
-// 	if err != nil {
-// 		t.Error("Failed to reload user", err)
-// 	}
-// 	u2, err2 := InitUser("bob", "foobar")
-// 	if err2 != nil {
-// 		t.Error("Failed to initialize bob", err2)
-// 	}
+func TestShare(t *testing.T) {
+	u, err := GetUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to reload user", err)
+	}
+	u2, err2 := InitUser("bob", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initialize bob", err2)
+	}
 
-// 	var v, v2 []byte
-// 	var msgid string
+	var v, v2 []byte
+	var msgid string
 
-// 	v, err = u.LoadFile("file1")
-// 	if err != nil {
-// 		t.Error("Failed to download the file from alice", err)
-// 	}
+	v, err = u.LoadFile("file1")
+	if err != nil {
+		t.Error("Failed to download the file from alice", err)
+	}
 
-// 	msgid, err = u.ShareFile("file1", "bob")
-// 	if err != nil {
-// 		t.Error("Failed to share the a file", err)
-// 	}
-// 	err = u2.ReceiveFile("file2", "alice", msgid)
-// 	if err != nil {
-// 		t.Error("Failed to receive the share message", err)
-// 	}
+	msgid, err = u.ShareFile("file1", "bob")
+	if err != nil {
+		t.Error("Failed to share the a file", err)
+	}
+	err = u2.ReceiveFile("file2", "alice", msgid)
+	if err != nil {
+		t.Error("Failed to receive the share message", err)
+	}
 
-// 	v2, err = u2.LoadFile("file2")
-// 	if err != nil {
-// 		t.Error("Failed to download the file after sharing", err)
-// 	}
-// 	if !reflect.DeepEqual(v, v2) {
-// 		t.Error("Shared file is not the same", v, v2)
-// 	}
-// }
+	v2, err = u2.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+	}
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+	}
+}
 
 
 //------------------ Extra tests ----------------------------------//
@@ -113,7 +116,6 @@ func TestAppend(t *testing.T) {
     if err1 != nil {
         t.Error("Failed to upload and download", err1)
     }
-
 	if u1 == nil {
 		t.Error("Download failed")
     }
@@ -168,31 +170,62 @@ func TestGetUserWithCorruptedData(t *testing.T) {
 }
 
 
-// /// Test for File integrity 
-// func TestStorageValid(t *testing.T) {
-//   	user1, v := InitUser("Elizabeth", "Avelar")
-//    user2, v2 := InitUser("Georgy", "Marrero")
-//    if v2 != nil || v != nil {
-//         t.Error("User1 could not be created")
-//         return
-//     }
-//     ElizabethFile := []byte("Elizabeth Uploaded File")
-//     user1.StoreFile("anikaFile", ElizabethFile)
-//     v2, err1 := user2.LoadFile("anikaFile")
-//     if reflect.DeepEqual(anika_file, v2) {
-//         t.Error("Attacker has been able to read the contents of other user's file", err1)
-//     }
-// }
+This test passes  
+func TestStorageValid(t *testing.T) {
+  	user1, v1 := InitUser("Elizabeth", "Avelar")
+    user2, v2 := InitUser("Georgy", "Marrero")
+    if v2 != nil || v1 != nil {
+        t.Error("User1 could not be created")
+        return
+    }
+    ElizabethFile := []byte("Elizabeth Uploaded File")
+    user1.StoreFile("Elizabeth_file", ElizabethFile)
+    u2, e1 := user2.LoadFile("Elizabeth_file")
+    if reflect.DeepEqual(ElizabethFile, u2) {
+        t.Error("Data Authenticity has been compromised", e1)
+    }
+}
 
-
-
-
-
-
-
-
-
-
+func TestForSharingAndRecieving(t *testing.T) {
+	userlib.DatastoreClear()    
+    _, e1 := InitUser("Nick", "waiver")
+    if e1 != nil {
+        t.Error("Failed to initialize user1", e1)
+    }
+    u, e2 := GetUser("Nick", "Waiver")
+    if e2 != nil {
+        t.Error("Failed to reload user1", e2)
+    }
+    user2, e3 := InitUser("Scott", "Shenker")
+    if e3 != nil {
+        t.Error("Failed to initialize USER2", e3)
+    }
+    var v []byte
+    var msgid string
+    //var msgid1 string
+    v = []byte("This is a test")
+    u.StoreFile("file1", v)
+    v, e4 := u.LoadFile("file1")
+    if e4 != nil {
+        t.Error("Failed to download the file from nick", e4)
+    }
+    msgid, e5 := u.ShareFile("file1", "Scott")
+    if e5 != nil {
+        t.Error("Failed to share the a file", e5)
+    }
+    //_ = u.RevokeFile("file1")
+    e6 := user2.ReceiveFile("file2", "alice", msgid)
+    if e6 != nil {
+        t.Error("Failed to receive the share message", e6)
+    }
+	v2, e7 := user2.LoadFile("file2")
+	if e7 == nil {
+		t.Error("Succeded to download the file after sharing", e7)
+	}
+	if reflect.DeepEqual(v, v2) {
+		t.Error("Shared file is not the same", v, v2)
+	}
+}
 
 
 
