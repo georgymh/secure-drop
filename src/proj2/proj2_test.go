@@ -27,7 +27,6 @@ func TestInit(t *testing.T) {
 
 // This test does not pass ?
 func TestStorage(t *testing.T) {
-	userlib.DatastoreClear() 
 	// And some more tests, because
 	u, err := GetUser("alice", "fubar")
 	if err != nil {
@@ -172,6 +171,7 @@ func TestGetUserWithCorruptedData(t *testing.T) {
 
 //This test passes  
 func TestStorageValid(t *testing.T) {
+      userlib.DatastoreClear()
   	user1, v1 := InitUser("Elizabeth", "Avelar")
     user2, v2 := InitUser("Georgy", "Marrero")
     if v2 != nil || v1 != nil {
