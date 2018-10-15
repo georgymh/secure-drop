@@ -7,6 +7,7 @@ import (
 
 	// You neet to add with
 	// go get github.com/nweaver/cs161-p2/userlib
+
 	"github.com/nweaver/cs161-p2/userlib"
 
 	// Life is much easier with json:  You are
@@ -293,8 +294,8 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
 
 		// Get the realKgenF and realIV
-		KgenF = sharingRecordStruct.File_Key
-		IV = sharingRecordStruct.Iv
+		KgenF = sharingRecordStruct.FileKey
+		IV = sharingRecordStruct.IV
 
 		// Make the realFileLookupID from the realKgenF
 		sha256 := userlib.NewSHA256()
@@ -419,11 +420,9 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // You may want to define what you actually want to pass as a
 // sharingRecord to serialized/deserialize in the data store.
 type sharingRecord struct {
-	Sender       string
-	Reveiver     string
-	File_Key     []byte
-	Iv           []byte
-	Signature_Id []byte
+	Recipient string
+	FileKey   []byte
+	IV        []byte
 }
 
 // This creates a sharing record, which is a key pointing to something
@@ -439,37 +438,81 @@ type sharingRecord struct {
 
 func (userdata *User) ShareFile(filename string, recipient string) (msgid string, err error) {
 	// 1. Reconstruct KgenF and IV using Argon2 (using index = 0)
-
 	// 1.5. Get the file and error if File struct is not found on the DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
-
 	// 1.75. Error if data has been tampered with [NOTE: not sure if we need to
 	// check this -- prompt doesn't say anything about it]
 
+	// 1. Reconstruct KgenF and IV using Argon2
+	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
+	KgenF := output[:16]
+	IV := output[16:32]
+
+	// 1.50. Get and verify the file structure from DataStore
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(KgenF))
+	lookupID := string(sha256.Sum(nil))
+	_, newKgenF, newFileIV, err := (userdata)._GetAndVerifyFile(lookupID, KgenF, IV)
+
+	// 1.75. Return nil if record not found or has been tampered with
+	if err != nil {
+		var dummy string
+		return dummy, err
+	}
+
 	// 2. Make a sharingRecord struct with the sender's username, receiver's
-	// username, KgenF (as File_Key), and IV (make signature_id be empty)
+	// username, KgenF (as FileKey), and IV (make signature_id be empty)
+	var sharingRecordStruct sharingRecord
+	sharingRecordStruct.Recipient = recipient
+	sharingRecordStruct.FileKey = newKgenF
+	sharingRecordStruct.IV = newFileIV
 
 	// 3. Look up the RSA Public Key of the recipient in the KeyStore
-
-	// 3.5. Error if it is not found
+	recipientPublicKey, ok := userlib.KeystoreGet(recipient)
+	if !ok {
+		var dummy string
+		return dummy, err
+	}
 
 	// 4. Store a random byte onto the DataStore with id:
 	// "pending_shares_"||SHA256(Argon2(pass=KgenF, salt=recipient's username))
 	// (This will be used to verify that the file wasn't already received)
+	temporaryKey := userlib.Argon2Key([]byte(newKgenF), []byte(recipient), 32)
+	sha256 = userlib.NewSHA256()
+	sha256.Write([]byte(temporaryKey[:16]))
+	lookupID = string(sha256.Sum(nil))
+	userlib.DatastoreSet(lookupID, temporaryKey[16:])
 
 	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
 	// the recipient's RSA Public Key
+	marshalledStruct, _ := json.Marshal(sharingRecordStruct)
+	tag := []byte("")
+	encryptedStruct, err := userlib.RSAEncrypt(&recipientPublicKey, marshalledStruct, tag)
+	if err != nil {
+		var dummy string
+		return dummy, errors.New("An error occurred.")
+	}
 
 	// 6. Sign (HMAC) the encrypted message (from step 4) using the current user's
 	// RSA private key [NOTE: I changed this -- before we had the HMAC of the
 	// encrypted message using the RSA Public Key of the receiver, but I think
 	// this is more secure]
+	signature, err := userlib.RSASign(userdata.Priv, encryptedStruct)
 
-	// 7. Return the concatenation of the encrypted message || signature ||
-	// current user's username
-
-	return
+	// 7. Return the concatenation of the signature || encrypted message
+	// NOTE: There are two possible problems: (1) I'm not sure if the signature
+	// has a set size we can split the message by and (2) I'm not sure if casting
+	// from bytes to string here and then back to bytes will be possible without
+	// errors.
+	// For the first problem we could prepend the size of the signature followed
+	// by some character like '|' and that would solve it.
+	// For the second problem, we could store the signatureAndEncryptedStruct
+	// into the DataStore on STEP 4 of this routine and instead pass the lookupID
+	// to the user as the 'msgid'.
+	signatureAndEncryptedStruct := append(signature, encryptedStruct...)
+	signatureAndEncryptedStructAsString := hex.EncodeToString(signatureAndEncryptedStruct)
+	return signatureAndEncryptedStructAsString, err
 }
 
 // Note recipient's filename can be different from the sender's filename.
