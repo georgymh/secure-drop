@@ -98,3 +98,64 @@ func Test_Get_User(t *testing.T) {
         }
     }
 }
+
+//Debugging test case 
+// func TestCorruptDataAndGetUser(t *testing.T) {
+//    userlib.DatastoreClear()
+//    _, e1 := InitUser("Berkeley", "EECS")
+//    if e1 != nil {
+//         t.Error("User1 could not be created")
+//    }
+//    _, e2 := InitUser("Nick", "waver")
+//    if e2 != nil {
+//         t.Error("User2 could not be created")
+//    }
+//    m := userlib.DatastoreGetMap()
+//    var val [2][]byte
+//    var keys [2]string
+//    var i = 0
+//    for k, _ := range m {
+//        val[i] = m[k]
+//        keys[i] = k
+//        i += 1
+//    }
+//    userlib.DatastoreSet(keys[0], val[1])
+//    userlib.DatastoreSet(keys[1], val[0])
+//    _, eer := GetUser("Berkeley", "EECS")
+//    if eer == nil {
+//         t.Error("Accessed corrupted data of user", eer)
+//    }
+// 	 userlib.DatastoreClear()
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
