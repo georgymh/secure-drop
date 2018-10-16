@@ -363,63 +363,63 @@ import (
 // 	}
 // }
 
-// func TestShareWithMultiple(t *testing.T) {
-//     //userlib.DatastoreClear()
-// 	_, e := InitUser("Elizabeth", "Avelar")
-// 	if e != nil {
-// 		// t.Error says the test fails
-// 		t.Error("Failed to initialize user", e)
-// 	}
-//     u, e1 := GetUser("Elizabeth", "Avelar")
-//     if e1 != nil {
-//         t.Error("Failed to reload Elizabeth", e1)
-//     }
-//     u2, e2 := InitUser("Bob", "foobar")
-//     if e2 != nil {
-//         t.Error("Failed to initialize Bob", e2)
-//     }
-//     u3, e3 := InitUser("Alice", "foobar")
-//     if e3 != nil {
-//         t.Error("Failed to initialize Alice", e3)
-//     }
-//     var msgid string
-//     var msgid1 string
-//     var m, m2 []byte
+func TestShareWithMultiple(t *testing.T) {
+    //userlib.DatastoreClear()
+	_, e := InitUser("Elizabeth", "Avelar")
+	if e != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", e)
+	}
+    u, e1 := GetUser("Elizabeth", "Avelar")
+    if e1 != nil {
+        t.Error("Failed to reload Elizabeth", e1)
+    }
+    u2, e2 := InitUser("Bob", "foobar")
+    if e2 != nil {
+        t.Error("Failed to initialize Bob", e2)
+    }
+    u3, e3 := InitUser("Alice", "foobar")
+    if e3 != nil {
+        t.Error("Failed to initialize Alice", e3)
+    }
+    var msgid string
+    var msgid1 string
+    var m, m2 []byte
 
-// 	m = []byte("This is a test")
-// 	u.StoreFile("file", m)
-//     m, e4 := u.LoadFile("file1")
-//     if e4 != nil {
-//         t.Error("Failed to download the file from Elizabeth", e4)
-//     }
-//     msgid, e5 := u.ShareFile("file", "Bob")
-//     if e5 != nil {
-//         t.Error("Failed to share the a file", e5)
-//     }
-//     e6 := u2.ReceiveFile("file2", "Elizabeth", msgid)
-//     if e6 != nil {
-//         t.Error("Failed to receive the share message", e6)
-//     }
+	m = []byte("This is a test")
+	u.StoreFile("file", m)
+    m, e4 := u.LoadFile("file1")
+    if e4 != nil {
+        t.Error("Failed to download the file from Elizabeth", e4)
+    }
+    msgid, e5 := u.ShareFile("file", "Bob")
+    if e5 != nil {
+        t.Error("Failed to share the a file", e5)
+    }
+    e6 := u2.ReceiveFile("file2", "Elizabeth", msgid)
+    if e6 != nil {
+        t.Error("Failed to receive the share message", e6)
+    }
  
-//     msgid1, e7 := u2.ShareFile("file2", "Alice")
-//     if e7 != nil {
-//         t.Error("Failed to share the a file", e7)
-//     }
-//     e8 := u3.ReceiveFile("file3", "Bob", msgid1)
-//     if e8 != nil {
-//         t.Error("Failed to receive the share message", e8)
-//     }
-//     m2, e9 := u3.LoadFile("file3")
-//     if e9 != nil {
-//         t.Error("Failed to download the file after sharing", e9)
-//     }
-//     if !reflect.DeepEqual(m, m2) {
-//         t.Error("Shared file is not the same", m, m2)
-//     }
+    msgid1, e7 := u2.ShareFile("file2", "Alice")
+    if e7 != nil {
+        t.Error("Failed to share the a file", e7)
+    }
+    e8 := u3.ReceiveFile("file3", "Bob", msgid1)
+    if e8 != nil {
+        t.Error("Failed to receive the share message", e8)
+    }
+    m2, e9 := u3.LoadFile("file3")
+    if e9 != nil {
+        t.Error("Failed to download the file after sharing", e9)
+    }
+    if !reflect.DeepEqual(m, m2) {
+        t.Error("Shared file is not the same", m, m2)
+    }
 
-//     /// Modify and see the appends
-//     m, e4 = u.LoadFile("file1")
-//     if e4 != nil {
-//         t.Error("Failed to download the file from Elizabeth", e4)
-//     }
-// }
+    /// Modify and see the appends
+    m, e4 = u.LoadFile("file1")
+    if e4 != nil {
+        t.Error("Failed to download the file from Elizabeth", e4)
+    }
+}
