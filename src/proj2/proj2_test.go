@@ -252,7 +252,7 @@ func TestAppend(t *testing.T) {
 	}
 }
 
-/// create a user sign it and then verify 
+/// create a user sign it and then verify
 func TestVerifyRSA(t *testing.T) {
 	_, userError := InitUser("Georgy", "Marrero")
 
@@ -261,24 +261,24 @@ func TestVerifyRSA(t *testing.T) {
 	}
 
 	userBack, e2 := GetUser("Georgy", "Marrero")
- 	if e2 != nil {
- 		t.Error("Failed to reload user", e2)
- 		return
- 	}
+	if e2 != nil {
+		t.Error("Failed to reload user", e2)
+		return
+	}
 
 	privateKey := (userBack).Priv
-    
+
 	//publicKey := &privateKey.PublicKey
 	publicKey, e3 := userlib.KeystoreGet("Georgy")
 	if e2 != nil {
- 		t.Error("Failed to get public key", e3)
- 		return
- 	}
-    
-    msg := []byte("I am Georgy")
-	
+		t.Error("Failed to get public key", e3)
+		return
+	}
+
+	msg := []byte("I am Georgy")
+
 	signature, err := userlib.RSASign(privateKey, msg)
-	
+
 	if err != nil {
 		t.Error("signature cannot be created", err)
 	}
@@ -291,81 +291,92 @@ func TestVerifyRSA(t *testing.T) {
 }
 
 func TestShareWithMultiple(t *testing.T) {
-    userlib.DatastoreClear()
-    _, e := InitUser("alice", "foo")
-    if e != nil {
-        // t.Error says the test fails
-        t.Error("Failed to initialize user", e)
-    }
-    u, e1 := GetUser("alice", "foo")
-    if e1 != nil {
-        t.Error("Failed to reload user", e1)
-    }
-    u2, e2 := InitUser("bob", "foobar")
-    if e2 != nil {
-        t.Error("Failed to initialize bob", e2)
-    }
-    u3, e3 := InitUser("eli", "avelar")
-    if e3 != nil {
-        t.Error("Failed to initialize eli", e3)
-    }
-    var m, m2 []byte
-    var msgid string
-    var msgid1 string
-        m = []byte("AAAAAAAAAAAAAAAAAA")
-        u.StoreFile("file1", m2)
-    m, e1 = u.LoadFile("file1")
-    if e1 != nil {
-        t.Error("Failed to download the file from alice", e1)
-    }
-    msgid, e1 = u.ShareFile("file1", "bob")
-    if e1 != nil {
-        t.Error("Failed to share the a file", e)
-    }
-    e1 = u2.ReceiveFile("file2", "alice", msgid)
-    if e1 != nil {
-        t.Error("Failed to receive the share message", e1)
-    }
-    //var v3, v4 []byte
-    msgid1, e4 := u2.ShareFile("file2", "eli")
-    if e4 != nil {
-        t.Error("Failed to share the a file", e4)
-    }
-    e5 := u3.ReceiveFile("file3", "bob", msgid1)
-    if e5 != nil {
-        t.Error("Failed to receive the share message", e5)
-    }
-    m2, e6 := u3.LoadFile("file3")
-    if e6 != nil {
-        t.Error("Failed to download the file after sharing", e6)
-    }
-    if !reflect.DeepEqual(m, m2) {
-        t.Error("Shared file is not the same", m, m2)
-    }
+	userlib.DatastoreClear()
 
-    // Append to the file and make the change persistant over other file
-    newData := "BBBBBBBBBBBBBBBBBB"
-    newDataInBytes := []byte(newData)
-    appendingError := u3.AppendFile("file3", newDataInBytes)
-    if appendingError != nil {
-        t.Error("Failed to append to file")
-    }
-    
-    m, e6 = u3.LoadFile("file3")
-    if e6 != nil {
-        t.Error("Failed to download the file from alice", e6)
-    }
-     m3 := []byte("AAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBB")
-    if !reflect.DeepEqual(m, m3) {
-        t.Error("Appended file is not the same for the owner", m3, m)
-    }
+	// Create 3 users
+	u1, e1 := InitUser("alice", "foo")
+	if e1 != nil {
+		t.Error("Failed to initialize user", e1)
+	}
+	u2, e2 := InitUser("bob", "foobar")
+	if e2 != nil {
+		t.Error("Failed to initialize bob", e2)
+	}
+	u3, e3 := InitUser("eli", "avelar")
+	if e3 != nil {
+		t.Error("Failed to initialize eli", e3)
+	}
 
-    m, e1 = u.LoadFile("file1")
-    if e1 != nil {
-        t.Error("Failed to download the file from alice", e1)
-    }
+	// Create new file to user 1
+	initialFileContents := []byte("AAAAAAAAAAAAAAAAAA")
+	u1.StoreFile("file1", initialFileContents)
+	retrievedInitialFileContents, e := u1.LoadFile("file1")
+	if e != nil {
+		t.Error("Failed to download the file from alice", e)
+	}
+	t.Log("Received initially: ", retrievedInitialFileContents)
 
-    if !reflect.DeepEqual(m, m3) {
-        t.Error("Changes did not get replicated on third party", m3, m)
-    }
+	// Share the file from user1 -> user2
+	msgid, e := u1.ShareFile("file1", "bob")
+	if e != nil {
+		t.Error("Failed to share the file (alice->bob) ", e)
+	}
+	e = u2.ReceiveFile("file2", "alice", msgid)
+	if e != nil {
+		t.Error("Failed to receive the share message (alice->bob) ", e)
+	}
+
+	// Share the file from user2 -> user3
+	msgid, e = u2.ShareFile("file2", "eli")
+	if e != nil {
+		t.Error("Failed to share the a file (bob->eli)", e)
+	}
+	e = u3.ReceiveFile("file3", "bob", msgid)
+	if e != nil {
+		t.Error("Failed to receive the share message (bob->eli)", e)
+	}
+
+	// Try to load the file from user3
+	fileContents, e := u3.LoadFile("file3")
+	if e != nil {
+		t.Error("Failed to download the file after sharing (eli) ", e)
+	}
+	if !reflect.DeepEqual(fileContents, initialFileContents) {
+		t.Error("Shared file is not the same (eli)", fileContents, initialFileContents)
+	}
+
+	// Append to the file
+	newData := "ZZZZZZZZZZZ"
+	newDataInBytes := []byte(newData)
+	appendingError := u3.AppendFile("file3", newDataInBytes)
+	if appendingError != nil {
+		t.Error("Failed to append to file (eli)")
+	}
+
+	// Check we can see the appended text
+	finalContents, e := u3.LoadFile("file3")
+	if e != nil {
+		t.Error("Failed to download the final file (eli) ", e)
+	}
+
+	var expectedContents []byte
+	expectedContents = append(expectedContents, initialFileContents...)
+	expectedContents = append(expectedContents, newDataInBytes...)
+
+	if !reflect.DeepEqual(expectedContents, finalContents) {
+		t.Error(
+			"Appended file is not the same for the owner\n"+
+				"Expected: ", expectedContents,
+			"\nActual: ", finalContents,
+		)
+	}
+
+	// m, e1 = u.LoadFile("file1")
+	// if e1 != nil {
+	// 	t.Error("Failed to download the file from alice", e1)
+	// }
+	//
+	// if !reflect.DeepEqual(m, m3) {
+	// 	t.Error("Changes did not get replicated on third party", m3, m)
+	// }
 }
