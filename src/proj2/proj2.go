@@ -494,11 +494,9 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 		return dummy, errors.New("An error occurred.")
 	}
 
-	// 6. Sign (HMAC) the encrypted message (from step 4) using the current user's
-	// RSA private key [NOTE: I changed this -- before we had the HMAC of the
-	// encrypted message using the RSA Public Key of the receiver, but I think
-	// this is more secure]
-	signature, err := userlib.RSASign(userdata.Priv, encryptedStruct)
+	// 6. Sign (HMAC) the recipient's username using the current user's RSA
+	// private key
+	signature, err := userlib.RSASign(userdata.Priv, []byte(recipient))
 
 	// 7. Return the concatenation of the signature || encrypted message
 	// NOTE: There are two possible problems: (1) I'm not sure if the signature
