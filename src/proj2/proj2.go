@@ -581,9 +581,8 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	// DataStore to prevent message reuses
 	userlib.DatastoreDelete(oneTimeVerificationID)
 
-	// NOTE: This is failing. Need to figure out now (Eli is doing this).
 	// Now check the signature
-	publicKey, ok := userlib.KeystoreGet(userdata.Username)
+	publicKey, ok := userlib.KeystoreGet(sender)
 	if !ok {
 		return errors.New("Public Key for user not found")
 	}
