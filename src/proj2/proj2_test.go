@@ -2,7 +2,7 @@ package proj2
 
 import (
 	//"bytes"
-	//"fmt"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -19,6 +19,7 @@ import (
 // 	t.Log("Initialization test")
 // 	userlib.DebugPrint = true
 // 	someUsefulThings()
+// 	userlib.DatastoreClear()
 
 // 	userlib.DebugPrint = false
 // 	u, err := InitUser("alice", "fubar")
@@ -72,6 +73,8 @@ import (
 // 	}
 
 // 	msgid, err = u.ShareFile("file1", "bob")
+// 	t.Log("msgid received: " + msgid)
+// 	t.Log("msgid length is ", len(msgid))
 // 	if err != nil {
 // 		t.Error("Failed to share the a file", err)
 // 	}
@@ -91,7 +94,7 @@ import (
 
 // // //------------------ Extra tests ----------------------------------//
 
-// Test for creating and getting multiple users
+// // Test for creating and getting multiple users
 // func TestInitAndGetMultiple(t *testing.T) {
 // 	//userlib.DatastoreClear()
 // 	userlib.DebugPrint = false
@@ -144,70 +147,6 @@ import (
 // 		}
 // 	}
 // }
-
-// // //Test append
-// func TestAppend(t *testing.T) {
-// 	user1, e := InitUser("Berkeley", "CS161")
-// 	if e != nil {
-// 		t.Error("User1 could not be created", e)
-// 	}
-// 	//v := []byte("contents of the file")
-// 	u := []byte("Berkeley is a great")
-// 	user1.StoreFile("BerkeleyFile", u)
-// 	u1, err1 := user1.LoadFile("BerkeleyFile")
-// 	if err1 != nil {
-// 		t.Error("Failed to upload and download", err1)
-// 	}
-// 	if u1 == nil {
-// 		t.Error("Download failed")
-// 	}
-
-// 	content_two := []byte("We have the best cs program")
-// 	err2 := user1.AppendFile("BerkeleyFile", content_two)
-
-// 	if err2 != nil {
-// 		t.Error("Error appending the file")
-// 	}
-
-// 	u3, err3 := user1.LoadFile("BerkeleyFile")
-// 	if err3 != nil {
-// 		t.Error("Failed to upload and download", err3)
-// 	}
-
-// 	u4 := []byte("Berkeley is a greatWe have the best cs program")
-// 	if !reflect.DeepEqual(u3, u4) {
-// 		t.Error("Append Mistmatch", u3, u4)
-// 	}
-// }
-
-// //Testing corrupting data user
-// // func TestGetUserWithCorruptedData(t *testing.T) {
-// // 	_, e1 := InitUser("Berkeley", "EECS")
-// // 	if e1 != nil {
-// // 		t.Error("User1 could not be created")
-// // 	}
-// // 	_, e2 := InitUser("Nick", "waver")
-// // 	if e2 != nil {
-// // 		t.Error("User2 could not be created")
-// // 	}
-// // 	m := userlib.DatastoreGetMap()
-// // 	//len_ := range m;
-// // 	var val [4][]byte
-// // 	var keys [6]string
-// // 	var i = 0
-// // 	for k, _ := range m {
-// // 		val[i] = m[k]
-// // 		keys[i] = k
-// // 		i += 1
-// // 	}
-// // 	userlib.DatastoreSet(keys[0], val[1])
-// // 	userlib.DatastoreSet(keys[1], val[0])
-// // 	_, eer := GetUser("Berkeley", "EECS")
-// // 	if eer == nil {
-// // 		t.Error("Accessed corrupted data of user", eer)
-// // 	}
-// // 	userlib.DatastoreClear()
-// // }
 
 // //This test passes
 // func TestStorageValid(t *testing.T) {
@@ -262,7 +201,84 @@ import (
 // 		)
 // 		t.Error(str)
 // 	}
+// }
 
+// // //Test append
+// func TestAppend(t *testing.T) {
+// 	// Get user
+// 	user, userError := GetUser("Elizabeth", "Avelar")
+// 	if userError != nil {
+// 		t.Error("Failed to get user")
+// 	}
+// 	t.Log("Logged in as", user.Username)
+
+// 	// Get file (sanity)
+// 	fileName := "somefile.txt"
+// 	initialFileData, fileError := user.LoadFile(fileName)
+// 	if fileError != nil {
+// 		t.Error("Failed to get the file")
+// 	}
+// 	t.Log("Initial file contents:", initialFileData)
+
+// 	// Append to file
+// 	newData := "\nThis is totally unrelated but w/e"
+// 	newDataInBytes := []byte(newData)
+// 	appendingError := user.AppendFile(fileName, newDataInBytes)
+// 	if appendingError != nil {
+// 		t.Error("Failed to append to file")
+// 	}
+
+// 	// Append to file again
+// 	newData2 := "\nThis too"
+// 	newDataInBytes2 := []byte(newData2)
+// 	appendingError2 := user.AppendFile(fileName, newDataInBytes2)
+// 	if appendingError2 != nil {
+// 		t.Error("Failed to append to file for the second time")
+// 	}
+
+// 	// Read file to check if we actually appended
+// 	resultingFileData, resultingFileError := user.LoadFile(fileName)
+// 	if resultingFileError != nil {
+// 		t.Error("Failed to get the file after appending. Error:", resultingFileError)
+// 	}
+// 	var expectedFileData []byte
+// 	expectedFileData = append(expectedFileData, initialFileData...)
+// 	expectedFileData = append(expectedFileData, newData...)
+// 	expectedFileData = append(expectedFileData, newData2...)
+// 	t.Log("Current file contents:", resultingFileData)
+// 	t.Log("Expected file contents:", expectedFileData)
+// 	if bytes.Compare(resultingFileData, expectedFileData) != 0 {
+// 		t.Error("Resulting file data and contents are not the same")
+// 	}
+// }
+
+//Testing corrupting data user
+// func TestGetUserWithCorruptedData(t *testing.T) {
+// 	_, e1 := InitUser("Berkeley", "EECS")
+// 	if e1 != nil {
+// 		t.Error("User1 could not be created")
+// 	}
+// 	_, e2 := InitUser("Nick", "waver")
+// 	if e2 != nil {
+// 		t.Error("User2 could not be created")
+// 	}
+// 	m := userlib.DatastoreGetMap()
+// 	//len_ := range m;
+// 	var val [4][]byte
+// 	var keys [6]string
+// 	var i = 0
+// 	for k, _ := range m {
+// 		val[i] = m[k]
+// 		keys[i] = k
+// 		i += 1
+// 	}
+// 	userlib.DatastoreSet(keys[0], val[1])
+// 	userlib.DatastoreSet(keys[1], val[0])
+// 	_, eer := GetUser("Berkeley", "EECS")
+// 	if eer == nil {
+// 		t.Error("Accessed corrupted data of user", eer)
+// 	}
+// 	userlib.DatastoreClear()
 // }
 
 // func TestForSharingAndRecieving(t *testing.T) {
@@ -280,6 +296,7 @@ import (
 // 	}
 // 	var v []byte
 // 	var msgid string
+
 // 	//var msgid1 string
 // 	v = []byte("This is a test")
 // 	u.StoreFile("file1", v)
@@ -305,60 +322,6 @@ import (
 // 	}
 // }
 
-
-// func TestStoreAndLoad(t *testing.T) {
-// 	// Create another user
-// 	user, userError := InitUser("Elizabeth", "Avelar")
-// 	if userError != nil {
-// 		t.Error("User (Elizabeth) could not be created.")
-// 		return
-// 	}
-
-// 	// Create a file under the user
-// 	fileName := "somefile.txt"
-// 	fileContents := []byte("CS161 Homework")
-// 	fileContentsBytes := []byte(fileContents) // for future use...
-// 	t.Log("Storing the contents:", fileContents)
-// 	user.StoreFile(fileName, fileContents)
-
-// 	// Reconstruct the keys and manually check the DataStore to see if the file
-// 	// was stored
-// 	output := userlib.Argon2Key([]byte(user.Username), []byte(fileName), 32)
-// 	KgenF := output[:16]
-
-// 	sha256 := userlib.NewSHA256()
-// 	sha256.Write([]byte(KgenF))
-// 	lookupID := string(sha256.Sum(nil))
-// 	_, ok := userlib.DatastoreGet("files_" + lookupID)
-// 	if ok {
-// 		str := fmt.Sprintf("We found the value in the DataStore! (key: %s)", lookupID)
-// 		t.Log(str)
-// 	} else {
-// 		str := fmt.Sprintf("An error ocurred while looking up (%s) in DataStore.", lookupID)
-// 		t.Error(str)
-// 	}
-
-// 	// Now check if we can retrieve and read the file, and everythin is OK
-// 	fileData, fileError := user.LoadFile("somefile.txt")
-
-// 	// Check for errors
-// 	if fileError != nil {
-// 		str := fmt.Sprintf("Error while uploading the file.\n"+
-// 			"Error message: %s\n"+"Data returned: %s\n", fileError, fileData)
-// 		t.Error(str)
-// 	}
-
-// 	if bytes.Compare(fileContentsBytes, fileData) != 0 {
-// 		str := fmt.Sprintf(
-// 			"Data is not what is supposed to be!\n"+
-// 				"Found (bytes): %s\n"+
-// 				"Expected (bytes): %s\n",
-// 			fileData,
-// 			fileContentsBytes,
-// 		)
-// 		t.Error(str)
-// 	}
-// }
 
 
 /// create a user sign it and then verify 
@@ -400,57 +363,63 @@ import (
 // 	}
 // }
 
-func TestShareWithMultiple(t *testing.T) {
-    userlib.DatastoreClear()
-	_, e1 := InitUser("Elizabeth", "Avelar")
-	if e1 != nil {
-		// t.Error says the test fails
-		t.Error("Failed to initialize user", e1)
-	}
-    u, e2 := GetUser("Elizabeth", "Avelar")
-    if e2 != nil {
-        t.Error("Failed to reload user", e2)
-    }
-    u2, e3 := InitUser("Bob", "foobar")
-    if e3 != nil {
-        t.Error("Failed to initialize Bob", e3)
-    }
-    u3, e3 := InitUser("Alice", "foobar")
-    if e3 != nil {
-        t.Error("Failed to initialize Alice", e3)
-    }
-    var msgid string
-    var msgid1 string
-    var m, m2 []byte
+// func TestShareWithMultiple(t *testing.T) {
+//     //userlib.DatastoreClear()
+// 	_, e := InitUser("Elizabeth", "Avelar")
+// 	if e != nil {
+// 		// t.Error says the test fails
+// 		t.Error("Failed to initialize user", e)
+// 	}
+//     u, e1 := GetUser("Elizabeth", "Avelar")
+//     if e1 != nil {
+//         t.Error("Failed to reload Elizabeth", e1)
+//     }
+//     u2, e2 := InitUser("Bob", "foobar")
+//     if e2 != nil {
+//         t.Error("Failed to initialize Bob", e2)
+//     }
+//     u3, e3 := InitUser("Alice", "foobar")
+//     if e3 != nil {
+//         t.Error("Failed to initialize Alice", e3)
+//     }
+//     var msgid string
+//     var msgid1 string
+//     var m, m2 []byte
 
-	m = []byte("This is a test")
-	u.StoreFile("file1", m)
-    m, e4 := u.LoadFile("file1")
-    if e4 != nil {
-        t.Error("Failed to download the file from Elizabeth", e4)
-    }
-    msgid, e5 := u.ShareFile("file1", "Bob")
-    if e5 != nil {
-        t.Error("Failed to share the a file", e5)
-    }
-    e6 := u2.ReceiveFile("file2", "Elizabeth", msgid)
-    if e6 != nil {
-        t.Error("Failed to receive the share message", e6)
-    }
-    //var v3, v4 []byte
-    msgid1, e7 := u2.ShareFile("file2", "Alice")
-    if e7 != nil {
-        t.Error("Failed to share the a file", e7)
-    }
-    e8 := u3.ReceiveFile("file3", "Bob", msgid1)
-    if e8 != nil {
-        t.Error("Failed to receive the share message", e8)
-    }
-    m2, e9 := u3.LoadFile("file3")
-    if e9 != nil {
-        t.Error("Failed to download the file after sharing", e9)
-    }
-    if !reflect.DeepEqual(m, m2) {
-        t.Error("Shared file is not the same", m, m2)
-    }
-}
+// 	m = []byte("This is a test")
+// 	u.StoreFile("file", m)
+//     m, e4 := u.LoadFile("file1")
+//     if e4 != nil {
+//         t.Error("Failed to download the file from Elizabeth", e4)
+//     }
+//     msgid, e5 := u.ShareFile("file", "Bob")
+//     if e5 != nil {
+//         t.Error("Failed to share the a file", e5)
+//     }
+//     e6 := u2.ReceiveFile("file2", "Elizabeth", msgid)
+//     if e6 != nil {
+//         t.Error("Failed to receive the share message", e6)
+//     }
+ 
+//     msgid1, e7 := u2.ShareFile("file2", "Alice")
+//     if e7 != nil {
+//         t.Error("Failed to share the a file", e7)
+//     }
+//     e8 := u3.ReceiveFile("file3", "Bob", msgid1)
+//     if e8 != nil {
+//         t.Error("Failed to receive the share message", e8)
+//     }
+//     m2, e9 := u3.LoadFile("file3")
+//     if e9 != nil {
+//         t.Error("Failed to download the file after sharing", e9)
+//     }
+//     if !reflect.DeepEqual(m, m2) {
+//         t.Error("Shared file is not the same", m, m2)
+//     }
+
+//     /// Modify and see the appends
+//     m, e4 = u.LoadFile("file1")
+//     if e4 != nil {
+//         t.Error("Failed to download the file from Elizabeth", e4)
+//     }
+// }
