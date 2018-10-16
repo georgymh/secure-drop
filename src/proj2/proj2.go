@@ -533,6 +533,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	// 6. Sign (HMAC) the recipient's username using the current user's RSA
 	// private key
 	signature, err := userlib.RSASign(userdata.Priv, []byte(recipient))
+	if err != nil {
+		var dummy string
+		return dummy, errors.New("An error occurred while signing with RSA")
+	}
 
 	// 7. Return the concatenation of the signature || encrypted message
 	// NOTE: There are two possible problems: (1) I'm not sure if the signature
@@ -579,16 +583,16 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 	// NOTE: This is failing. Need to figure out now (Eli is doing this).
 	// Now check the signature
-	// publicKey, ok := userlib.KeystoreGet(userdata.Username)
-	// if !ok {
-	// 	return errors.New("Public Key for user not found")
-	// }
+	publicKey, ok := userlib.KeystoreGet(userdata.Username)
+	if !ok {
+		return errors.New("Public Key for user not found")
+	}
 
-	// signature := signatureAndRSAEncryptedStruct[:256]
-	// err := userlib.RSAVerify(&publicKey, []byte(userdata.Username), []byte(signature))
-	// if err != nil {
-	// 	return errors.New("Error while verifying the message")
-	// }
+	signature := signatureAndRSAEncryptedStruct[:256]
+	err := userlib.RSAVerify(&publicKey, []byte(userdata.Username), []byte(signature))
+	if err != nil {
+		return errors.New("Error while verifying the message")
+	}
 
 	// 3. Now check decrypt the structure
 	RSAEncryptedStruct := signatureAndRSAEncryptedStruct[256:]
