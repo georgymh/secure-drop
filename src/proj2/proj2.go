@@ -308,21 +308,32 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
 	//	conversion if found, otherwise look at the "files_" namespace)
-
 	// 2.1. Look up the file in the "shared_files_" namespace
-	sharedFilesLookupID := "shared_files_" + lookupID
-	encryptedSharingRecordWithIV, ok := userlib.DatastoreGet(sharedFilesLookupID)
+	encryptedSharingRecordWithIVAndHMAC, ok := userlib.DatastoreGet("shared_files_" + lookupID)
 
 	// 2.2. If found, do conversion. That is, get the actual, REAL file.
-	var encryptedFileWithIVAndHMAC []byte
-	var fileLookupID string
 	if ok {
 		// Decrypt the sharing record
+		size := len(encryptedSharingRecordWithIVAndHMAC)
+		encryptedSharingRecordWithIV := encryptedSharingRecordWithIVAndHMAC[:size-32]
 		sharingRecordIV := encryptedSharingRecordWithIV[:16]
 		encryptedSharingRecord := encryptedSharingRecordWithIV[16:]
 		marshalledSharingRecord := cfb_decrypt(KgenF, encryptedSharingRecord, sharingRecordIV)
 		var sharingRecordStruct sharingRecord
 		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
+
+		// Return an error if the sharing record struct has been tampered with (check
+		// signature and HMAC)
+		sharingRecordHMAC := encryptedSharingRecordWithIVAndHMAC[size-32:]
+		mac := userlib.NewHMAC(KgenF)
+		mac.Write(encryptedSharingRecordWithIV)
+		expectedMAC := mac.Sum(nil)
+
+		if !userlib.Equal(expectedMAC, sharingRecordHMAC) {
+			// File integrity was compromised!
+			var dummyBytes []byte
+			return nil, dummyBytes, dummyBytes, errors.New("An integrity error occurred during the shared file conversion")
+		}
 
 		// Get the realKgenF and realIV
 		KgenF = sharingRecordStruct.FileKey
@@ -335,8 +346,8 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 	}
 
 	// 2.3. Look the file up in the "files_" namespace.
-	fileLookupID = "files_" + lookupID
-	encryptedFileWithIVAndHMAC, ok = userlib.DatastoreGet(fileLookupID)
+	fileLookupID := "files_" + lookupID
+	encryptedFileWithIVAndHMAC, ok := userlib.DatastoreGet(fileLookupID)
 
 	if !ok {
 		var dummyBytes []byte
@@ -439,7 +450,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		chunk, _, _, err = (userdata)._GetAndVerifyFile(fileStruct.OtherFiles[i], newKgenF, newFileIV)
 		if err != nil {
 			var dummyData []byte
-			return dummyData, err
+			return dummyData, errors.New("AppendError: " + err.Error())
 		}
 		allData = append(allData, chunk.Data...)
 	}
@@ -500,17 +511,15 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	sharingRecordStruct.IV = newFileIV
 
 	// 3. Look up the RSA Public Key of the recipient in the KeyStore
+	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
+	// the recipient's RSA Public Key
 	recipientPublicKey, ok := userlib.KeystoreGet(recipient)
 	if !ok {
 		var dummy string
 		return dummy, err
 	}
-
-	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
-	// the recipient's RSA Public Key
 	marshalledStruct, _ := json.Marshal(sharingRecordStruct)
-	tag := []byte("")
-	encryptedStruct, err := userlib.RSAEncrypt(&recipientPublicKey, marshalledStruct, tag)
+	encryptedStruct, err := userlib.RSAEncrypt(&recipientPublicKey, marshalledStruct, []byte(""))
 	if err != nil {
 		var dummy string
 		return dummy, errors.New("An error occurred")
@@ -538,16 +547,12 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	// into the DataStore.
 
 	// 4. Store a random byte onto the DataStore with id:
-	// "pending_shares_"||SHA256(Argon2(pass=KgenF, salt=recipient's username))
+	// "pending_shares_"||random_string
 	// (This will be used to verify that the file wasn't already received)
-	temporaryKey := userlib.Argon2Key([]byte(newKgenF), []byte(recipient), 16)
-	sha256 = userlib.NewSHA256()
-	sha256.Write([]byte(temporaryKey))
-	lookupID = string(sha256.Sum(nil))
-
+	temporaryKey := uuid.New().String()
 	signatureAndEncryptedStruct := append(signature, encryptedStruct...)
-	userlib.DatastoreSet("pending_shares_"+lookupID, signatureAndEncryptedStruct)
-	return lookupID, err
+	userlib.DatastoreSet("pending_shares_"+temporaryKey, signatureAndEncryptedStruct)
+	return temporaryKey, err
 }
 
 // Note recipient's filename can be different from the sender's filename.
@@ -624,8 +629,6 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	if err != nil {
 		return errors.New("Could not find the file being shared")
 	}
-
-	return errors.New("@@@ " + hex.EncodeToString([]byte(realFileStruct.Data)))
 
 	// 8. Append the SHA256(NewKGenF) to original File struct's property
 	// Shared_With_Users (this will be used for revoking)
