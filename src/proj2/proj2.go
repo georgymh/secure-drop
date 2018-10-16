@@ -278,6 +278,32 @@ func (userdata *User) _ModifyFileHelper(lookupID string, KgenF []byte, IV []byte
 	userlib.DatastoreSet(lookupID, IVAndEncryptedFileAndHMAC)
 }
 
+func (userdata *User) _ModifyWhenSharingFileHelper(lookupID string, KgenF []byte, IV []byte, fileStruct *File, newUserLookupID string) {
+	// 1. Fill in a File struct with the data, count integer, & users shared with.
+	otherUsers := fileStruct.Shared_With_Users
+	otherUsers = append(otherUsers, newUserLookupID)
+	var newFileStruct = File{
+		Data:              fileStruct.Data,
+		OtherFiles:        fileStruct.OtherFiles,
+		Shared_With_Users: otherUsers,
+	}
+
+	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
+	file, _ := json.Marshal(newFileStruct)
+	encryptedFile := cfb_encrypt(KgenF, file, IV)
+
+	// 4. Concat IV||E(struct)
+	IVAndEncryptedFile := append(IV, encryptedFile...)
+
+	// 5. Put "files_"||SHA256(KgenF) -> IV||E(struct)||HMAC(K_genF, IV||E(struct)) into DataStore
+	mac := userlib.NewHMAC(KgenF)
+	mac.Write(IVAndEncryptedFile)
+	expectedMAC := mac.Sum(nil)
+	IVAndEncryptedFileAndHMAC := append(IVAndEncryptedFile, expectedMAC...)
+	userlib.DatastoreDelete(lookupID)
+	userlib.DatastoreSet(lookupID, IVAndEncryptedFileAndHMAC)
+}
+
 func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte) (filePtr *File, newKgenF []byte, newFileIV []byte, err error) {
 	// 2. Get and decrypt the File struct from DataStore
 	// (NOTE: first look for it in the namespace "shared_files_". Do the
@@ -480,15 +506,6 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 		return dummy, err
 	}
 
-	// 4. Store a random byte onto the DataStore with id:
-	// "pending_shares_"||SHA256(Argon2(pass=KgenF, salt=recipient's username))
-	// (This will be used to verify that the file wasn't already received)
-	temporaryKey := userlib.Argon2Key([]byte(newKgenF), []byte(recipient), 32)
-	sha256 = userlib.NewSHA256()
-	sha256.Write([]byte(temporaryKey[:16]))
-	lookupID = string(sha256.Sum(nil))
-	userlib.DatastoreSet(lookupID, temporaryKey[16:])
-
 	// 5. RSA Encrypt the marshalled version of the sharingRecord struct using
 	// the recipient's RSA Public Key
 	marshalledStruct, _ := json.Marshal(sharingRecordStruct)
@@ -496,7 +513,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	encryptedStruct, err := userlib.RSAEncrypt(&recipientPublicKey, marshalledStruct, tag)
 	if err != nil {
 		var dummy string
-		return dummy, errors.New("An error occurred.")
+		return dummy, errors.New("An error occurred")
 	}
 
 	// 6. Sign (HMAC) the recipient's username using the current user's RSA
@@ -513,9 +530,24 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 	// For the second problem, we could store the signatureAndEncryptedStruct
 	// into the DataStore on STEP 4 of this routine and instead pass the lookupID
 	// to the user as the 'msgid'.
+	// signatureAndEncryptedStruct := append(signature, encryptedStruct...)
+	// signatureAndEncryptedStructAsString := hex.EncodeToString(signatureAndEncryptedStruct)
+	// return signatureAndEncryptedStructAsString, err
+
+	// PLOT TWIST: put the concatenation of the signature || encrypted message
+	// into the DataStore.
+
+	// 4. Store a random byte onto the DataStore with id:
+	// "pending_shares_"||SHA256(Argon2(pass=KgenF, salt=recipient's username))
+	// (This will be used to verify that the file wasn't already received)
+	temporaryKey := userlib.Argon2Key([]byte(newKgenF), []byte(recipient), 16)
+	sha256 = userlib.NewSHA256()
+	sha256.Write([]byte(temporaryKey))
+	lookupID = string(sha256.Sum(nil))
+
 	signatureAndEncryptedStruct := append(signature, encryptedStruct...)
-	signatureAndEncryptedStructAsString := hex.EncodeToString(signatureAndEncryptedStruct)
-	return signatureAndEncryptedStructAsString, err
+	userlib.DatastoreSet("pending_shares_"+lookupID, signatureAndEncryptedStruct)
+	return lookupID, err
 }
 
 // Note recipient's filename can be different from the sender's filename.
@@ -523,54 +555,92 @@ func (userdata *User) ShareFile(filename string, recipient string) (msgid string
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, msgid string) error {
-	// 1. (msgid is the RSA-E_K_rec,pub(sharingRecord struct)||HMAC())
-	// Decrypt the sharingRecord struct using the receiver's RSA Private Key
+	// PLOT TWIST:
+	// 1. Get the encrypted structure
+	oneTimeVerificationID := "pending_shares_" + msgid
+	signatureAndRSAEncryptedStruct, ok := userlib.DatastoreGet(oneTimeVerificationID)
+	if !ok {
+		return errors.New("Could not find the encrypted content in the DataStore")
+	}
 
-	// 2. Get the receiver's RSA Public Key from KeyStore
-
-	// 3. Verify the HMAC of the encrypted sharingRecord using the receiver's RSA
-	// Public Key [if not valid, error]
-
-	// 4. Generate the one_time_verification_id and completed_IV with
-	// Argon2(pass=struct->KgenF, salt=receiver's username)
-
-	// 5. If "pending_shares_"||SHA256(one_time_verification_id) doesn't exist in
-	// the DataStore, send error (this implies that the data was already shared
-	// with this user)
-
-	// 6. Delete "pending_shares_"||SHA256(one_time_verification_id) from the
+	// 2. Delete "pending_shares_"||SHA256(one_time_verification_id) from the
 	// DataStore to prevent message reuses
+	userlib.DatastoreDelete(oneTimeVerificationID)
 
-	// 4. Generate NewKgenF, IV and signature_id using Argon2 with parameters
-	// NOTE (Eli added): since this process will be repeated somewhere else
-	// Let's make the ID of size 4, so 32 bytes total for IV and key and id
-	// (pass=receiver's username || 0, salt=filename)
+	// NOTE: This is failing. Need to figure out now (Eli is doing this).
+	// Now check the signature
+	// publicKey, ok := userlib.KeystoreGet(userdata.Username)
+	// if !ok {
+	// 	return errors.New("Public Key for user not found")
+	// }
 
-	///////NOTE!!!: we should get rid of the signature id's and just do:
-	//"shared_files_"||SHA256(NewKgenF) -> IV||E(struct)||HMAC(NewKgenF, IV||E(struct))
-	//Below this is already being implemented in append and store files
+	// signature := signatureAndRSAEncryptedStruct[:256]
+	// err := userlib.RSAVerify(&publicKey, []byte(userdata.Username), []byte(signature))
+	// if err != nil {
+	// 	return errors.New("Error while verifying the message")
+	// }
 
-	// 5. Set struct->signature_id to be signature_id
+	// 3. Now check decrypt the structure
+	RSAEncryptedStruct := signatureAndRSAEncryptedStruct[256:]
+	unmarshalledDecryptedStruct, err := userlib.RSADecrypt(userdata.Priv, []byte(RSAEncryptedStruct), []byte(""))
+	if err != nil {
+		return errors.New("Error while decrypting the message")
+	}
+	var decryptedSharingStruct sharingRecord
+	json.Unmarshal(unmarshalledDecryptedStruct, &decryptedSharingStruct)
 
-	// 6. Marshall and encrypt struct with CFB (key=NewKgenF, IV=IV) [E(struct)]
+	// 4. Generate NewKgenF and IV using Argon2 with parameters
+	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
+	NewKgenF := output[:16]
+	NewFileIV := output[16:]
 
-	// 7. Concat IV||E(struct)
+	// 5. Concat IV||E(struct)||HMAC(K_genF, IV||E(struct))
+	IVAndEncryptedSharingStruct := append(NewFileIV, unmarshalledDecryptedStruct...)
+	mac := userlib.NewHMAC(NewKgenF)
+	mac.Write(IVAndEncryptedSharingStruct)
+	expectedMAC := mac.Sum(nil)
+	IVAndEncryptedSharingStructAndMAC := append(IVAndEncryptedSharingStruct, expectedMAC...)
 
-	// 8. Put "signatures_"||signature_id -> HMAC(NewKgenF, IV||E(struct)) into
-	// DataStore
+	// 6. Put "shared_files_"||SHA256(NewKgenF) ->
+	// IV||E(struct)||HMAC(NewKgenF, IV||E(struct)) into DataStore
+	sha256 := userlib.NewSHA256()
+	sha256.Write([]byte(NewKgenF))
+	sharedFileLookupID := string(sha256.Sum(nil))
+	userlib.DatastoreSet("shared_files_"+sharedFileLookupID, IVAndEncryptedSharingStructAndMAC)
+	/////
 
-	// 9. Put "shared_files_"||SHA256(NewKgenF) -> IV||E(struct) into DataStore
-
-	// 10. Get the original File struct from DataStore (Get
+	// 7. Get the original File struct from DataStore (Get
 	// "files_"||SHA256(struct->File_Key) and decrypt it with struct->File_Key)
 	// [NOTE: this may be insecure because receiver could store the
 	// struct->File_Key somewhere! -- let's ask Piazza]
+	sha256 = userlib.NewSHA256()
+	sha256.Write([]byte(decryptedSharingStruct.FileKey))
+	originalFileLookupID := string(sha256.Sum(nil))
+	realFileStruct, realKgenF, realFileIV, err := userdata._GetAndVerifyFile(
+		originalFileLookupID,
+		decryptedSharingStruct.FileKey,
+		decryptedSharingStruct.IV,
+	)
+	if err != nil {
+		return errors.New("Could not find the file being shared")
+	}
 
-	// 11. Append the SHA256(NewKGenF) to original File struct's property
+	return errors.New("@@@ " + hex.EncodeToString([]byte(realFileStruct.Data)))
+
+	// 8. Append the SHA256(NewKGenF) to original File struct's property
 	// Shared_With_Users (this will be used for revoking)
-
-	// 12. Update the Original File Struct on the DataStore (marshall and encrypt
+	// 9. Update the Original File Struct on the DataStore (marshall and encrypt
 	// and store as struct->Iv||E(struct))
+	sha256 = userlib.NewSHA256()
+	sha256.Write([]byte(realKgenF))
+	realFileLookupID := string(sha256.Sum(nil))
+	(userdata)._ModifyWhenSharingFileHelper(
+		"files_"+realFileLookupID,
+		realKgenF,
+		realFileIV,
+		realFileStruct,
+		sharedFileLookupID,
+	)
 
 	return nil
 }
@@ -617,5 +687,45 @@ func cfb_decrypt(key []byte, ciphertext []byte, iv []byte) (plaintext []byte) {
 	plaintext = make([]byte, len(ciphertext))
 	stream.XORKeyStream(plaintext, ciphertext)
 	return
-
 }
+
+// // 1. (msgid is the signature||RSA-E_K_rec,pub(sharingRecord struct) in HEX)
+// // Decrypt the sharingRecord struct using the receiver's RSA Private Key
+// // 2. Get the receiver's RSA Public Key from KeyStore
+// // 3. Verify the HMAC of the encrypted sharingRecord using the receiver's RSA
+// // Public Key [if not valid, error]
+// publicKey, ok := userlib.KeystoreGet(userdata.Username)
+// if !ok {
+// 	return errors.New("Public Key for user not found")
+// }
+//
+// err := userlib.RSAVerify(&publicKey, []byte(userdata.Username), []byte(msgid[:256]))
+// if err != nil {
+// 	return errors.New("Error while verifying the message")
+// }
+// unmarshalledDecryptedStruct, err := userlib.RSADecrypt(userdata.Priv, []byte(msgid[256:]), []byte(""))
+// if err != nil {
+// 	return errors.New("Error while decrypting the message")
+// }
+// var decryptedStruct sharingRecord
+// json.Unmarshal(unmarshalledDecryptedStruct, &decryptedStruct)
+//
+// // 4. Generate the one_time_verification_id and completed with
+// // Argon2(pass=struct->KgenF, salt=recipient's username)
+// output := userlib.Argon2Key(decryptedStruct.FileKey, []byte(userdata.Username), 32)
+// oneTimeVerificationID := output[:16]
+// oneTimeVerificationContent := output[16:]
+
+// // 5. If "pending_shares_"||SHA256(one_time_verification_id) doesn't exist in
+// // the DataStore, send error (this implies that the data was already shared
+// // with this user)
+// sha256 := userlib.NewSHA256()
+// sha256.Write([]byte(oneTimeVerificationID))
+// oneTimeVerificationIDAsString := "pending_shares_" + string(sha256.Sum(nil))
+// retrievedOneTimeVerificationContent, ok := userlib.DatastoreGet(oneTimeVerificationIDAsString)
+// if !ok {
+// 	return errors.New("Could not find the one time verification in the DataStore")
+// }
+// if !userlib.Equal(retrievedOneTimeVerificationContent, oneTimeVerificationContent) {
+// 	return errors.New("The contents of the one time verification are not the same")
+// }

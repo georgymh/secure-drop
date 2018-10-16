@@ -73,6 +73,8 @@ func TestShare(t *testing.T) {
 	}
 
 	msgid, err = u.ShareFile("file1", "bob")
+	t.Log("msgid received: " + msgid)
+	t.Log("msgid length is ", len(msgid))
 	if err != nil {
 		t.Error("Failed to share the a file", err)
 	}
