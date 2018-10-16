@@ -75,12 +75,9 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 
 // The structure definition for a user record
 type User struct {
-	Username string
-	Password string
-	//should we derreferance it?
-	Priv *userlib.PrivateKey
-
-	//Modified to type[]byte
+	Username     string
+	Password     string
+	Priv         *userlib.PrivateKey
 	Signature_Id []byte
 }
 
@@ -639,6 +636,11 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 		return errors.New("Could not find the file being shared")
 	}
 
+	// 7.5. Check that the user is supposed to receive this file.
+	if userdata.Username != decryptedSharingStruct.Recipient {
+		return errors.New("You're not supposed to receive this file")
+	}
+
 	// 8. Append the SHA256(NewKGenF) to original File struct's property
 	// Shared_With_Users (this will be used for revoking)
 	// 9. Update the Original File Struct on the DataStore (marshall and encrypt
@@ -661,9 +663,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 func (userdata *User) RevokeFile(filename string) (err error) {
 	// 1. Generate KgenF, IV and signature_id using Argon2 with parameters
 	//    (pass=username || 0, salt=filename)
-
 	// 2. Get the File struct from DataStore under the "shared_files_" namespace
-
 	// 3. If found, return error because this user is not the original owner of
 	// the file
 
