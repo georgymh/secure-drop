@@ -318,9 +318,14 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 		encryptedSharingRecordWithIV := encryptedSharingRecordWithIVAndHMAC[:size-32]
 		sharingRecordIV := encryptedSharingRecordWithIV[:16]
 		encryptedSharingRecord := encryptedSharingRecordWithIV[16:]
-		marshalledSharingRecord := cfb_decrypt(KgenF, encryptedSharingRecord, sharingRecordIV)
+		marshalledSharingRecord := cfb_decrypt(KgenF, encryptedSharingRecord, IV)
 		var sharingRecordStruct sharingRecord
 		json.Unmarshal(marshalledSharingRecord, &sharingRecordStruct)
+
+		if !userlib.Equal(IV, sharingRecordIV) {
+			var dummyBytes []byte
+			return nil, dummyBytes, dummyBytes, errors.New("IVs are not the same")
+		}
 
 		// Return an error if the sharing record struct has been tampered with (check
 		// signature and HMAC)
@@ -425,7 +430,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	// 1. Reconstruct KgenF and IV using Argon2
 	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
 	KgenF := output[:16]
-	IV := output[16:32]
+	IV := output[16:]
 
 	// 2. Get and verify the file structure from DataStore
 	sha256 := userlib.NewSHA256()
@@ -587,12 +592,10 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 
 	// 3. Now check decrypt the structure
 	RSAEncryptedStruct := signatureAndRSAEncryptedStruct[256:]
-	unmarshalledDecryptedStruct, err := userlib.RSADecrypt(userdata.Priv, []byte(RSAEncryptedStruct), []byte(""))
+	marshalledDecryptedStruct, err := userlib.RSADecrypt(userdata.Priv, []byte(RSAEncryptedStruct), []byte(""))
 	if err != nil {
 		return errors.New("Error while decrypting the message")
 	}
-	var decryptedSharingStruct sharingRecord
-	json.Unmarshal(unmarshalledDecryptedStruct, &decryptedSharingStruct)
 
 	// 4. Generate NewKgenF and IV using Argon2 with parameters
 	output := userlib.Argon2Key([]byte(userdata.Username), []byte(filename), 32)
@@ -600,11 +603,12 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	NewFileIV := output[16:]
 
 	// 5. Concat IV||E(struct)||HMAC(K_genF, IV||E(struct))
-	IVAndEncryptedSharingStruct := append(NewFileIV, unmarshalledDecryptedStruct...)
+	marshalledEncryptedStruct := cfb_encrypt(NewKgenF, marshalledDecryptedStruct, NewFileIV)
+	IVAndEncryptedSharingStruct := append(NewFileIV, marshalledEncryptedStruct...)
 	mac := userlib.NewHMAC(NewKgenF)
 	mac.Write(IVAndEncryptedSharingStruct)
-	expectedMAC := mac.Sum(nil)
-	IVAndEncryptedSharingStructAndMAC := append(IVAndEncryptedSharingStruct, expectedMAC...)
+	HMAC := mac.Sum(nil)
+	IVAndEncryptedSharingStructAndMAC := append(IVAndEncryptedSharingStruct, HMAC...)
 
 	// 6. Put "shared_files_"||SHA256(NewKgenF) ->
 	// IV||E(struct)||HMAC(NewKgenF, IV||E(struct)) into DataStore
@@ -618,6 +622,8 @@ func (userdata *User) ReceiveFile(filename string, sender string, msgid string) 
 	// "files_"||SHA256(struct->File_Key) and decrypt it with struct->File_Key)
 	// [NOTE: this may be insecure because receiver could store the
 	// struct->File_Key somewhere! -- let's ask Piazza]
+	var decryptedSharingStruct sharingRecord
+	json.Unmarshal(marshalledDecryptedStruct, &decryptedSharingStruct)
 	sha256 = userlib.NewSHA256()
 	sha256.Write([]byte(decryptedSharingStruct.FileKey))
 	originalFileLookupID := string(sha256.Sum(nil))
