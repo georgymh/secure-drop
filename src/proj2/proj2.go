@@ -254,13 +254,17 @@ func (userdata *User) _StoreFileHelper(lookupID string, KgenF []byte, IV []byte,
 
 func (userdata *User) _ModifyFileHelper(lookupID string, KgenF []byte, IV []byte, fileStruct *File, newChunkLookupID string) {
 	// 1. Fill in a File struct with the data, count integer, & users shared with.
-	var otherFiles = fileStruct.OtherFiles
+	otherFiles := fileStruct.OtherFiles
 	otherFiles = append(otherFiles, newChunkLookupID)
-	var newFileStruct = File{Data: fileStruct.Data, OtherFiles: otherFiles, Shared_With_Users: fileStruct.Shared_With_Users}
+	var newFileStruct = File{
+		Data:              fileStruct.Data,
+		OtherFiles:        otherFiles,
+		Shared_With_Users: fileStruct.Shared_With_Users,
+	}
 
 	// 3. Marshall and encrypt struct with CFB (key=Kgen, IV=random string).
-	file_, _ := json.Marshal(newFileStruct)
-	encryptedFile := cfb_encrypt(KgenF, file_, IV)
+	file, _ := json.Marshal(newFileStruct)
+	encryptedFile := cfb_encrypt(KgenF, file, IV)
 
 	// 4. Concat IV||E(struct)
 	IVAndEncryptedFile := append(IV, encryptedFile...)
@@ -270,6 +274,7 @@ func (userdata *User) _ModifyFileHelper(lookupID string, KgenF []byte, IV []byte
 	mac.Write(IVAndEncryptedFile)
 	expectedMAC := mac.Sum(nil)
 	IVAndEncryptedFileAndHMAC := append(IVAndEncryptedFile, expectedMAC...)
+	userlib.DatastoreDelete(lookupID)
 	userlib.DatastoreSet(lookupID, IVAndEncryptedFileAndHMAC)
 }
 
@@ -309,7 +314,7 @@ func (userdata *User) _GetAndVerifyFile(lookupID string, KgenF []byte, IV []byte
 
 	if !ok {
 		var dummyBytes []byte
-		return nil, dummyBytes, dummyBytes, errors.New("File does not exist")
+		return nil, dummyBytes, dummyBytes, errors.New("File does not exist with ID " + lookupID)
 	}
 
 	// 2.4. Break down the structure
@@ -365,13 +370,13 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	// 4. Store the new file chunk in DataStore
 	// (with some random bytes added in the creation of the key)
 	newChunkLookupID := uuid.New().String()
-	(userdata)._StoreFileHelper(newChunkLookupID, newKgenF, newFileIV, data)
+	(userdata)._StoreFileHelper("files_"+newChunkLookupID, newKgenF, newFileIV, data)
 
 	// 5. Make this file chunk be connected to the end of the file chunk list.
 	sha256 = userlib.NewSHA256()
 	sha256.Write([]byte(newKgenF))
-	fileLookupID := string(sha256.Sum(nil))
-	(userdata)._ModifyFileHelper(fileLookupID, newKgenF, newFileIV, fileStruct, newChunkLookupID)
+	realFileLookupID := string(sha256.Sum(nil))
+	(userdata)._ModifyFileHelper("files_"+realFileLookupID, newKgenF, newFileIV, fileStruct, newChunkLookupID)
 
 	return nil
 }
@@ -414,7 +419,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	}
 
 	// 6. Return all the data
-	return allData, err
+	return allData, nil
 }
 
 // You may want to define what you actually want to pass as a

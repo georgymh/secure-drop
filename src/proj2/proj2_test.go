@@ -19,6 +19,7 @@ func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 	userlib.DebugPrint = true
 	someUsefulThings()
+	userlib.DatastoreClear()
 
 	userlib.DebugPrint = false
 	u, err := InitUser("alice", "fubar")
@@ -145,70 +146,6 @@ func Test_Get_User(t *testing.T) {
 	}
 }
 
-// //Test append
-func TestAppend(t *testing.T) {
-	user1, e := InitUser("Berkeley", "CS161")
-	if e != nil {
-		t.Error("User1 could not be created", e)
-	}
-	//v := []byte("contents of the file")
-	u := []byte("Berkeley is a great")
-	user1.StoreFile("BerkeleyFile", u)
-	u1, err1 := user1.LoadFile("BerkeleyFile")
-	if err1 != nil {
-		t.Error("Failed to upload and download", err1)
-	}
-	if u1 == nil {
-		t.Error("Download failed")
-	}
-
-	content_two := []byte("We have the best cs program")
-	err2 := user1.AppendFile("BerkeleyFile", content_two)
-
-	if err2 != nil {
-		t.Error("Error appending the file")
-	}
-
-	u3, err3 := user1.LoadFile("BerkeleyFile")
-	if err3 != nil {
-		t.Error("Failed to upload and download", err3)
-	}
-
-	u4 := []byte("Berkeley is a greatWe have the best cs program")
-	if !reflect.DeepEqual(u3, u4) {
-		t.Error("Append Mistmatch", u3, u4)
-	}
-}
-
-//Testing corrupting data user
-// func TestGetUserWithCorruptedData(t *testing.T) {
-// 	_, e1 := InitUser("Berkeley", "EECS")
-// 	if e1 != nil {
-// 		t.Error("User1 could not be created")
-// 	}
-// 	_, e2 := InitUser("Nick", "waver")
-// 	if e2 != nil {
-// 		t.Error("User2 could not be created")
-// 	}
-// 	m := userlib.DatastoreGetMap()
-// 	//len_ := range m;
-// 	var val [4][]byte
-// 	var keys [6]string
-// 	var i = 0
-// 	for k, _ := range m {
-// 		val[i] = m[k]
-// 		keys[i] = k
-// 		i += 1
-// 	}
-// 	userlib.DatastoreSet(keys[0], val[1])
-// 	userlib.DatastoreSet(keys[1], val[0])
-// 	_, eer := GetUser("Berkeley", "EECS")
-// 	if eer == nil {
-// 		t.Error("Accessed corrupted data of user", eer)
-// 	}
-// 	userlib.DatastoreClear()
-// }
-
 //This test passes
 func TestStorageValid(t *testing.T) {
 	// Create another user
@@ -262,8 +199,85 @@ func TestStorageValid(t *testing.T) {
 		)
 		t.Error(str)
 	}
-
 }
+
+// //Test append
+func TestAppend(t *testing.T) {
+	// Get user
+	user, userError := GetUser("Elizabeth", "Avelar")
+	if userError != nil {
+		t.Error("Failed to get user")
+	}
+	t.Log("Logged in as", user.Username)
+
+	// Get file (sanity)
+	fileName := "somefile.txt"
+	initialFileData, fileError := user.LoadFile(fileName)
+	if fileError != nil {
+		t.Error("Failed to get the file")
+	}
+	t.Log("Initial file contents:", initialFileData)
+
+	// Append to file
+	newData := "\nThis is totally unrelated but w/e"
+	newDataInBytes := []byte(newData)
+	appendingError := user.AppendFile(fileName, newDataInBytes)
+	if appendingError != nil {
+		t.Error("Failed to append to file")
+	}
+
+	// Append to file again
+	newData2 := "\nThis too"
+	newDataInBytes2 := []byte(newData2)
+	appendingError2 := user.AppendFile(fileName, newDataInBytes2)
+	if appendingError2 != nil {
+		t.Error("Failed to append to file for the second time")
+	}
+
+	// Read file to check if we actually appended
+	resultingFileData, resultingFileError := user.LoadFile(fileName)
+	if resultingFileError != nil {
+		t.Error("Failed to get the file after appending. Error:", resultingFileError)
+	}
+	var expectedFileData []byte
+	expectedFileData = append(expectedFileData, initialFileData...)
+	expectedFileData = append(expectedFileData, newData...)
+	expectedFileData = append(expectedFileData, newData2...)
+	t.Log("Current file contents:", resultingFileData)
+	t.Log("Expected file contents:", expectedFileData)
+	if bytes.Compare(resultingFileData, expectedFileData) != 0 {
+		t.Error("Resulting file data and contents are not the same")
+	}
+}
+
+//Testing corrupting data user
+// func TestGetUserWithCorruptedData(t *testing.T) {
+// 	_, e1 := InitUser("Berkeley", "EECS")
+// 	if e1 != nil {
+// 		t.Error("User1 could not be created")
+// 	}
+// 	_, e2 := InitUser("Nick", "waver")
+// 	if e2 != nil {
+// 		t.Error("User2 could not be created")
+// 	}
+// 	m := userlib.DatastoreGetMap()
+// 	//len_ := range m;
+// 	var val [4][]byte
+// 	var keys [6]string
+// 	var i = 0
+// 	for k, _ := range m {
+// 		val[i] = m[k]
+// 		keys[i] = k
+// 		i += 1
+// 	}
+// 	userlib.DatastoreSet(keys[0], val[1])
+// 	userlib.DatastoreSet(keys[1], val[0])
+// 	_, eer := GetUser("Berkeley", "EECS")
+// 	if eer == nil {
+// 		t.Error("Accessed corrupted data of user", eer)
+// 	}
+// 	userlib.DatastoreClear()
+// }
 
 func TestForSharingAndRecieving(t *testing.T) {
 	_, e1 := InitUser("Nick", "Waiver")
@@ -280,6 +294,7 @@ func TestForSharingAndRecieving(t *testing.T) {
 	}
 	var v []byte
 	var msgid string
+
 	//var msgid1 string
 	v = []byte("This is a test")
 	u.StoreFile("file1", v)
